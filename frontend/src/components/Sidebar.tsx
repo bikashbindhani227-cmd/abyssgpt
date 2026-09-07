@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight, Pencil, Search, Settings, Shield, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
+import { ChevronRight, Pencil, Search, Shield, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
@@ -193,11 +193,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ChevronRight size={16} className="account-chevron" />
         </button>
 
+        {/* The account card above already opens Settings, so this row only
+            needs the actions that live nowhere else. */}
         <div className="sidebar-bottom-actions">
-          <button onClick={onOpenSettings}>
-            <Settings size={15} />
-            <span>Settings</span>
-          </button>
           {isAdmin && (
             <button onClick={onOpenAdmin}>
               <Shield size={15} />

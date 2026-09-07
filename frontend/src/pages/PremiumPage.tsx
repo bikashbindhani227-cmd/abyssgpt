@@ -29,7 +29,7 @@ const staticBenefits = [
 ];
 
 export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
-  const { userProfile } = useAuth();
+  const { userProfile, firebaseUser, loading: authLoading } = useAuth();
   const [info, setInfo] = useState<PremiumInfoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,6 +40,12 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load plan details'))
       .finally(() => setLoading(false));
   }, []);
+
+  // userProfile comes from a separate backend call than this page's own
+  // /api/user/premium fetch. Wait for both so the identifier below never
+  // renders blank because the profile call was still in flight.
+  const pageLoading = loading || authLoading;
+  const identifierEmail = userProfile?.email || firebaseUser?.email || '';
 
   const priceInr = info?.priceInr;
   const telegramUsername = info?.telegramUsername || '@MrNewton_2';
@@ -74,7 +80,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
       </header>
 
       <main className="mx-auto w-full max-w-2xl px-4 pb-16 pt-8 sm:px-6">
-        {loading ? (
+        {pageLoading ? (
           <div className="card card-pad space-y-4">
             <Skeleton className="skeleton-title" />
             <Skeleton className="skeleton-text" style={{ width: '30%', height: 34 }} />
@@ -83,14 +89,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
             <Skeleton className="skeleton-text" style={{ width: '80%' }} />
           </div>
         ) : (
-          <article className="card card-pad relative overflow-hidden !p-6 sm:!p-9">
-            {/* Restrained brand glow */}
-            <div
-              className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full blur-3xl"
-              style={{ background: 'var(--accent-soft)' }}
-              aria-hidden="true"
-            />
-
+          <article className="card card-pad !p-6 sm:!p-9">
             <div className="mb-6 flex items-center gap-3">
               <div
                 className="grid h-12 w-12 place-items-center rounded-2xl border"
@@ -150,7 +149,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
 
             {/* Benefits */}
             <div className="mb-8">
-              <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">
+              <h3 className="mb-3 text-[13px] font-bold text-ink-2">
                 Everything in Pro
               </h3>
               <ul className="space-y-2.5 text-[13.5px] text-ink-2">
@@ -179,7 +178,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
             <div className="space-y-3 rounded-2xl border border-line bg-surface-2 p-4">
               <div className="text-[13px] leading-relaxed text-ink-2">
                 To activate or renew Pro, contact our admin on Telegram with your registered email address (
-                <strong className="text-ink">{userProfile?.email}</strong>). Activation is applied promptly.
+                <strong className="text-ink">{identifierEmail}</strong>). Activation is applied promptly.
               </div>
 
               <a

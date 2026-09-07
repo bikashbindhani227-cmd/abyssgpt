@@ -16,7 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenAccount,
 }) => {
-  const { isAdmin, logout } = useAuth();
+  const { isPremium, logout } = useAuth();
   const { activeConversation, createNewChat } = useChat();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -55,10 +55,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button className="icon-btn top-new" onClick={() => createNewChat()} aria-label="New chat" title="New chat">
           <Plus size={19} strokeWidth={2.1} />
         </button>
-        <button className="top-upgrade" onClick={onOpenPremium}>
-          <Crown size={15} />
-          <span>Upgrade</span>
-        </button>
+        {!isPremium && (
+          <button className="top-upgrade" onClick={onOpenPremium}>
+            <Crown size={15} />
+            <span>Upgrade</span>
+          </button>
+        )}
         <button
           className="icon-btn"
           onClick={() => setShowMenu((v) => !v)}
