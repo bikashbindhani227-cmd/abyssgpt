@@ -5,8 +5,8 @@ interface AbyssLogoProps {
 }
 
 /**
- * Simple animated AbyssGPT mark: a slowly spinning gradient ring
- * around a softly pulsing core. Pure SVG + CSS, no extra dependencies.
+ * Static AbyssGPT mark: a gradient ring around a soft core.
+ * Pure SVG, no animation, no extra dependencies (calm by design).
  */
 export const AbyssLogo: React.FC<AbyssLogoProps> = ({ size = 18 }) => {
   return (

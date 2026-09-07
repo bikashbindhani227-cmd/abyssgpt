@@ -22,13 +22,101 @@ import {
 import {
   streamChatCompletion,
   streamAgenticCompletion,
-  getConfiguredModelId,
+  ModelError,
   type ChatMessagePayload,
 } from '../services/aiCredits.js';
-import { AGENT_TOOLS, createBudgetedToolExecutor } from '../services/agentService.js';
+import { AGENT_TOOLS, createUntrackedToolExecutor } from '../services/agentService.js';
 import { createBudgetForRequest, BudgetTracker } from '../services/agentBudget.js';
+import { buildAbyssGptSystemPrompt } from '../services/promptComposition.js';
 
 export const chatRouter = Router();
+
+/**
+ * Neutral display label for the configured model. The real MODEL_ID stays
+ * backend-only (admin configuration + server logs) and is never shipped to
+ * clients — the provider/model identity is an internal detail.
+ */
+const MODEL_DISPLAY_LABEL = 'AbyssGPT';
+
+/**
+ * Convert ANY streaming failure into a client-safe message. Raw provider
+ * bodies, model identities, and infrastructure details never reach clients;
+ * full diagnostics stay in server logs.
+ */
+function userSafeStreamError(error: unknown, context: string): string {
+  if (error instanceof ModelError) {
+    console.error(`[${context}] model failure (${error.code}):`, error.detail);
+    return error.userMessage;
+  }
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`[${context}] streaming failure:`, detail);
+  return 'Something went wrong while generating the response. Please try again.';
+}
+
+/** Shared per-request SSE pipeline: batching, accumulation, persistence hooks. */
+interface SseWriter {
+  write: (payload: Record<string, unknown>) => void;
+  accumulateChunk: (text: string) => void;
+  flush: () => void;
+  accumulatedText: () => string;
+}
+
+function createSseWriter(res: Response): SseWriter {
+  let accumulated = '';
+  let pending = '';
+  let lastFlush = Date.now();
+
+  return {
+    write: (payload) => {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    },
+    accumulateChunk: (text) => {
+      accumulated += text;
+      pending += text;
+      // Batch tiny deltas: >=48 chars or 24ms since last flush (UI smoothness).
+      if (pending.length >= 48 || Date.now() - lastFlush >= 24) {
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: pending })}\n\n`);
+        pending = '';
+        lastFlush = Date.now();
+      }
+    },
+    flush: () => {
+      if (!pending) return;
+      res.write(`data: ${JSON.stringify({ type: 'chunk', text: pending })}\n\n`);
+      pending = '';
+      lastFlush = Date.now();
+    },
+    accumulatedText: () => accumulated,
+  };
+}
+
+function setupRequestAbort(req: AuthenticatedRequest, res: Response): { abortController: AbortController; cleanup: () => void } {
+  const abortController = new AbortController();
+  const abortUpstream = () => {
+    if (!abortController.signal.aborted) abortController.abort();
+  };
+  const onAborted = () => abortUpstream();
+  const onClose = () => {
+    if (!res.writableEnded) abortUpstream();
+  };
+  req.on('aborted', onAborted);
+  res.on('close', onClose);
+  return {
+    abortController,
+    cleanup: () => {
+      req.off('aborted', onAborted);
+      res.off('close', onClose);
+    },
+  };
+}
+
+function beginSse(res: Response): void {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+}
 
 chatRouter.post(
   '/stream',
@@ -91,60 +179,45 @@ chatRouter.post(
       userMessageWrite,
     ]);
 
-    // Setup SSE streaming headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
+    beginSse(res);
 
-    // Send metadata event
+    // Send metadata event (model identity intentionally neutral — backend-only detail).
     res.write(
       `data: ${JSON.stringify({
         type: 'meta',
         conversationId: conv.id,
         userMessage: userMsg,
-        model: getConfiguredModelId(),
+        model: MODEL_DISPLAY_LABEL,
       })}\n\n`
     );
 
-    // Native agent routing under AUTOMATIC RESOURCE MANAGEMENT:
+    // AGENT ROUTING under AUTOMATIC RESOURCE MANAGEMENT:
     // 1) TASK CLASSIFICATION -> 2) AUTOMATIC BUDGET PLANNER -> 3) AGENT EXECUTION.
     // The budget is derived server-side from the task itself; the client and the
     // model can never raise it, and every value stays below the hard ceilings.
-    const budgetPlan = createBudgetForRequest(cleanMessage, Boolean(webSearch));
-    const useWebSearchTool = budgetPlan.webSearchEnabled;
+    // An explicit user web-search toggle only STRENGTHENS the plan — it never
+    // gates agentic behavior (the planner decides tools from the task itself).
+    const explicitWebSearch = Boolean(webSearch);
+    const budgetPlan = createBudgetForRequest(cleanMessage, explicitWebSearch);
     const useAgent = budgetPlan.useAgent;
     if (useAgent) {
       res.write(`data: ${JSON.stringify({ type: 'thinking', text: 'Agent planning…' })}\n\n`);
     }
 
-    // Build messages payload
-    const payloadMessages: ChatMessagePayload[] = [];
-
-    // 1. System Prompt
-    let fullSystemPrompt = systemConfig.systemPrompt;
-    fullSystemPrompt += `\n\n[ABYSSGPT AGENT BEHAVIOR]\nBe highly capable, precise, and practical. For coding tasks, produce complete production-ready code with correct imports, types, error handling, security considerations, and runnable structure. Do not use fake implementations, placeholders, or TODOs. When debugging, identify the root cause and give the exact fix. Prefer concise answers for simple questions and deep step-by-step reasoning for complex engineering work. Use tools only when they materially improve accuracy; prefer the fewest tool calls that fully answer, and stop calling tools as soon as you have enough information. Never repeat a tool call that already returned the same result or failed. Never claim a tool was used unless it actually returned a result.`;
-    if (useWebSearchTool) {
-      fullSystemPrompt += `\n\n[WEB SEARCH REQUIRED] This request depends on current/live web information or asks to find websites/sources. You MUST call the web_search tool first before answering. Do not answer from memory when web search is available.`;
-    }
-
-    // 2. User Memory (if enabled)
-    if (memory.enabled && memory.facts.length > 0) {
-      fullSystemPrompt += `\n\n[User Memory Profile:\n${memory.facts.map((f) => `- ${f}`).join('\n')}]`;
-    }
-
-    // 3. Conversation summary (if exists)
-    if (conv.summary) {
-      fullSystemPrompt += `\n\n[Summary of earlier conversation:\n${conv.summary}]`;
-    }
-
-    payloadMessages.push({
-      role: 'system',
-      content: fullSystemPrompt,
+    // Effective system prompt: admin prompt (authoritative) + agent instructions
+    // + tool inventory. Identical structure for every configured model.
+    const fullSystemPrompt = buildAbyssGptSystemPrompt({
+      adminSystemPrompt: systemConfig.systemPrompt,
+      memoryFacts: memory.enabled ? memory.facts : [],
+      conversationSummary: conv.summary || null,
+      toolsAvailable: useAgent,
+      recommendWebSearch: useAgent && budgetPlan.webSearchEnabled,
+      explicitWebSearch: useAgent && explicitWebSearch,
     });
 
-    // 5. Past conversation context (excluding the user message we just saved if already in pastMessages)
+    const payloadMessages: ChatMessagePayload[] = [{ role: 'system', content: fullSystemPrompt }];
+
+    // Past conversation context (excluding the user message we just saved if already in pastMessages)
     for (const msg of pastMessages) {
       if (msg.id === userMsg.id) continue;
       payloadMessages.push({
@@ -153,25 +226,18 @@ chatRouter.post(
       });
     }
 
-    // 6. Current message
-    payloadMessages.push({
-      role: 'user',
-      content: cleanMessage,
-    });
+    // Current message
+    payloadMessages.push({ role: 'user', content: cleanMessage });
 
-    const abortController = new AbortController();
-    const abortUpstream = () => {
-      if (!abortController.signal.aborted) abortController.abort();
-    };
-    req.on('aborted', abortUpstream);
-    res.on('close', () => {
-      if (!res.writableEnded) abortUpstream();
-    });
+    const { abortController, cleanup } = setupRequestAbort(req, res);
+    const sse = createSseWriter(res);
 
-    // AGENT EXECUTION under the planned budget. Every tool call passes through
-    // the BudgetTracker (gating, per-call timeout, output clamp, loop protection).
+    // AGENT EXECUTION under the planned budget. The orchestrator itself owns
+    // gating, accounting, loop protection, and untrusted-data fencing through
+    // the shared BudgetTracker; this executor provides validated, timed,
+    // clamped tool execution.
     const tracker = new BudgetTracker(budgetPlan);
-    const budgetedExecutor = createBudgetedToolExecutor(budgetPlan, tracker, abortController.signal);
+    const toolExecutor = createUntrackedToolExecutor(budgetPlan, abortController.signal);
     if (useAgent) {
       // Server-side observability only. Never sent to the client.
       console.log('[agent-budget] plan:', JSON.stringify(tracker.snapshot()));
@@ -180,57 +246,57 @@ chatRouter.post(
     // SERVER-SIDE HARD LIMIT: total wall-clock for this request, enforced by the
     // backend regardless of what the model or planner does.
     const totalTimeoutMs = budgetPlan.budget.TOTAL_AGENT_TIMEOUT_MS + 5000;
-    const totalTimer = setTimeout(abortUpstream, totalTimeoutMs);
+    const totalTimer = setTimeout(() => {
+      if (!abortController.signal.aborted) abortController.abort();
+    }, totalTimeoutMs);
     totalTimer.unref?.();
 
-    let accumulatedText = '';
-    let pendingClientText = '';
-    let lastClientFlush = Date.now();
-    const modelUsed = getConfiguredModelId();
-
-    const flushClientText = () => {
-      if (!pendingClientText) return;
-      res.write(`data: ${JSON.stringify({ type: 'chunk', text: pendingClientText })}\n\n`);
-      pendingClientText = '';
-      lastClientFlush = Date.now();
-    };
+    const modelUsed = MODEL_DISPLAY_LABEL;
 
     try {
       const streamGenerator = useAgent
-        ? streamAgenticCompletion(payloadMessages, AGENT_TOOLS, budgetedExecutor, abortController.signal, useWebSearchTool ? 'web_search' : undefined, budgetPlan, tracker)
+        ? streamAgenticCompletion(
+            payloadMessages,
+            AGENT_TOOLS,
+            toolExecutor,
+            abortController.signal,
+            budgetPlan.webSearchEnabled ? 'web_search' : undefined,
+            budgetPlan,
+            tracker,
+          )
         : streamChatCompletion(payloadMessages, abortController.signal);
 
       for await (const event of streamGenerator) {
-        if (abortController.signal.aborted) {
-          break;
-        }
+        if (abortController.signal.aborted) break;
 
         if (event.type === 'chunk' && event.text) {
-          accumulatedText += event.text;
-          pendingClientText += event.text;
-          if (pendingClientText.length >= 48 || Date.now() - lastClientFlush >= 24) flushClientText();
-        } else if (event.type === 'thinking') {
-          res.write(`data: ${JSON.stringify({ type: 'thinking', text: event.text })}\n\n`);
+          sse.accumulateChunk(event.text);
+        } else if (event.type === 'thinking' && event.text) {
+          sse.write({ type: 'thinking', text: event.text });
         } else if (event.type === 'done') {
-          flushClientText();
+          sse.flush();
           break;
+        } else if (event.type === 'error' && event.error) {
+          // Orchestrator surfaced a controlled error — safe message already.
+          if (sse.accumulatedText().trim()) {
+            await addMessage(user.uid, conv.id, 'assistant', sse.accumulatedText(), modelUsed).catch(() => {});
+          }
+          sse.write({ type: 'error', error: event.error });
+          res.end();
+          cleanup();
+          return;
         }
       }
 
       // Handle empty response fallback
-      if (!accumulatedText.trim() && !abortController.signal.aborted) {
-        accumulatedText = 'The AI returned an empty response. Please try again.';
-        res.write(`data: ${JSON.stringify({ type: 'chunk', text: accumulatedText })}\n\n`);
+      let finalText = sse.accumulatedText();
+      if (!finalText.trim() && !abortController.signal.aborted) {
+        finalText = 'The AI returned an empty response. Please try again.';
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: finalText })}\n\n`);
       }
 
       // Save assistant message to Firestore
-      const assistantMsg = await addMessage(
-        user.uid,
-        conv.id,
-        'assistant',
-        accumulatedText,
-        modelUsed
-      );
+      const assistantMsg = await addMessage(user.uid, conv.id, 'assistant', finalText, modelUsed);
 
       // Check if user shared an explicit name or preference to add to memory
       if (memory.enabled) {
@@ -249,18 +315,16 @@ chatRouter.post(
       console.log('[agent-budget] final:', JSON.stringify(tracker.snapshot()));
       res.end();
     } catch (streamErr: unknown) {
-      const errorMsg = streamErr instanceof Error ? streamErr.message : 'AI stream failed';
-      console.error('Streaming error:', errorMsg);
-
-      // If partial text was received before error, save it
-      if (accumulatedText.trim()) {
-        await addMessage(user.uid, conv.id, 'assistant', accumulatedText, modelUsed).catch(() => {});
+      // Client-safe error only; provider bodies/model identity stay in logs.
+      const errorMsg = userSafeStreamError(streamErr, 'chat/stream');
+      if (sse.accumulatedText().trim()) {
+        await addMessage(user.uid, conv.id, 'assistant', sse.accumulatedText(), modelUsed).catch(() => {});
       }
-
       res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
       res.end();
     } finally {
       clearTimeout(totalTimer);
+      cleanup();
     }
   }
 );
@@ -309,16 +373,15 @@ chatRouter.post(
       getUserMemory(user.uid),
     ]);
 
-    const payloadMessages: ChatMessagePayload[] = [];
-    let fullSystemPrompt = systemConfig.systemPrompt;
-    fullSystemPrompt += `\n\n[ABYSSGPT AGENT BEHAVIOR]\nBe highly capable, precise, and practical. For coding tasks, produce complete production-ready code with correct imports, types, error handling, security considerations, and runnable structure. Do not use fake implementations, placeholders, or TODOs. When debugging, identify the root cause and give the exact fix. Prefer concise answers for simple questions and deep step-by-step reasoning for complex engineering work. Use tools only when they materially improve accuracy; prefer the fewest tool calls that fully answer, and stop calling tools as soon as you have enough information. Never repeat a tool call that already returned the same result or failed. Never claim a tool was used unless it actually returned a result.`;
-    if (memory.enabled && memory.facts.length > 0) {
-      fullSystemPrompt += `\n\n[User Memory Profile:\n${memory.facts.map((f) => `- ${f}`).join('\n')}]`;
-    }
-    if (conv.summary) {
-      fullSystemPrompt += `\n\n[Summary of earlier conversation:\n${conv.summary}]`;
-    }
-    payloadMessages.push({ role: 'system', content: fullSystemPrompt });
+    // Same effective prompt structure as the main stream path (consistency).
+    const fullSystemPrompt = buildAbyssGptSystemPrompt({
+      adminSystemPrompt: systemConfig.systemPrompt,
+      memoryFacts: memory.enabled ? memory.facts : [],
+      conversationSummary: conv.summary || null,
+      toolsAvailable: false,
+    });
+
+    const payloadMessages: ChatMessagePayload[] = [{ role: 'system', content: fullSystemPrompt }];
 
     // Include history up to the last user message
     const historySlice = messages.slice(0, messages.indexOf(lastUserMsg) + 1).slice(-contextLimit);
@@ -329,63 +392,41 @@ chatRouter.post(
       });
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
+    beginSse(res);
 
     res.write(
       `data: ${JSON.stringify({
         type: 'meta',
         conversationId: conv.id,
         isRegeneration: true,
-        model: getConfiguredModelId(),
+        model: MODEL_DISPLAY_LABEL,
       })}\n\n`
     );
 
-    const abortController = new AbortController();
-    const abortUpstream = () => {
-      if (!abortController.signal.aborted) abortController.abort();
-    };
-    req.on('aborted', abortUpstream);
-    res.on('close', () => {
-      if (!res.writableEnded) abortUpstream();
-    });
-
-    let accumulatedText = '';
-    let pendingClientText = '';
-    let lastClientFlush = Date.now();
-    const modelUsed = getConfiguredModelId();
-
-    const flushClientText = () => {
-      if (!pendingClientText) return;
-      res.write(`data: ${JSON.stringify({ type: 'chunk', text: pendingClientText })}\n\n`);
-      pendingClientText = '';
-      lastClientFlush = Date.now();
-    };
+    const { abortController, cleanup } = setupRequestAbort(req, res);
+    const sse = createSseWriter(res);
+    const modelUsed = MODEL_DISPLAY_LABEL;
 
     try {
       for await (const event of streamChatCompletion(payloadMessages, abortController.signal)) {
         if (abortController.signal.aborted) break;
         if (event.type === 'chunk' && event.text) {
-          accumulatedText += event.text;
-          pendingClientText += event.text;
-          if (pendingClientText.length >= 48 || Date.now() - lastClientFlush >= 24) flushClientText();
-        } else if (event.type === 'thinking') {
-          res.write(`data: ${JSON.stringify({ type: 'thinking', text: event.text })}\n\n`);
+          sse.accumulateChunk(event.text);
+        } else if (event.type === 'thinking' && event.text) {
+          sse.write({ type: 'thinking', text: event.text });
         } else if (event.type === 'done') {
-          flushClientText();
+          sse.flush();
           break;
         }
       }
 
-      if (!accumulatedText.trim() && !abortController.signal.aborted) {
-        accumulatedText = 'The AI returned an empty response. Please try again.';
-        res.write(`data: ${JSON.stringify({ type: 'chunk', text: accumulatedText })}\n\n`);
+      let finalText = sse.accumulatedText();
+      if (!finalText.trim() && !abortController.signal.aborted) {
+        finalText = 'The AI returned an empty response. Please try again.';
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: finalText })}\n\n`);
       }
 
-      const assistantMsg = await addMessage(user.uid, conv.id, 'assistant', accumulatedText, modelUsed);
+      const assistantMsg = await addMessage(user.uid, conv.id, 'assistant', finalText, modelUsed);
 
       res.write(
         `data: ${JSON.stringify({
@@ -396,9 +437,11 @@ chatRouter.post(
       );
       res.end();
     } catch (streamErr: unknown) {
-      const errorMsg = streamErr instanceof Error ? streamErr.message : 'Regeneration failed';
+      const errorMsg = userSafeStreamError(streamErr, 'chat/regenerate');
       res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
       res.end();
+    } finally {
+      cleanup();
     }
   }
 );

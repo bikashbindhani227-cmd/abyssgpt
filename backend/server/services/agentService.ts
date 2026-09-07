@@ -2,131 +2,47 @@ import { searchTavily } from './tavilyService.js';
 import { readUrlWithJina } from './jinaService.js';
 import { runCodeInDaytona } from './daytonaService.js';
 import {
+  ABSOLUTE_CEILING_BOUNDS,
   BudgetTracker,
   clampToolOutput,
   createBudgetForRequest,
   runToolWithTimeout,
   type BudgetPlan,
 } from './agentBudget.js';
-import type { AgentToolDefinition, AgentToolExecutor } from './aiCredits.js';
+import type { AgentToolExecutor } from './aiCredits.js';
+import {
+  AGENT_TOOLS,
+  fenceToolOutput,
+  validateToolArguments,
+} from './toolRegistry.js';
 
-export const AGENT_TOOLS: AgentToolDefinition[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description: 'Search the live web for current facts, recent information, prices, news, documentation, or sources. Use when the answer depends on information that may have changed.',
-      parameters: {
-        type: 'object',
-        properties: { query: { type: 'string', description: 'A focused web search query.' } },
-        required: ['query'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_url',
-      description: 'Read and extract the useful text from a specific public URL supplied by the user or discovered during research.',
-      parameters: {
-        type: 'object',
-        properties: { url: { type: 'string', description: 'The full http or https URL to read.' } },
-        required: ['url'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'run_code',
-      description: 'Execute code safely in an isolated Daytona sandbox to test, debug, calculate, compile, or validate code. Never use it for destructive or credential-exfiltration actions.',
-      parameters: {
-        type: 'object',
-        properties: {
-          language: { type: 'string', enum: ['python', 'javascript', 'typescript'] },
-          code: { type: 'string', description: 'Complete runnable code.' },
-        },
-        required: ['language', 'code'],
-        additionalProperties: false,
-      },
-    },
-  },
-];
-
-function normalizeLanguage(value: unknown): 'python' | 'javascript' | 'typescript' {
-  const raw = String(value || 'python').toLowerCase();
-  if (raw === 'js' || raw === 'javascript') return 'javascript';
-  if (raw === 'ts' || raw === 'typescript') return 'typescript';
-  return 'python';
-}
-
-/** Models often wrap executable code in markdown fences; strip them before sandboxing. */
-function stripCodeFences(code: string): string {
-  const fence = code.match(/```(?:python|javascript|typescript|js|ts|py)?\s*\n([\s\S]*?)```/i);
-  return (fence ? fence[1] : code).trim();
-}
+// Tool schemas live in the Tool Registry; re-exported for API stability.
+export { AGENT_TOOLS };
+export { stripCodeFences } from './toolRegistry.js';
 
 /**
- * Raw tool implementations. Callers should normally use createBudgetedToolExecutor()
- * so every call is gated, timed, clamped, and loop-protected by the resource manager.
- */
-export const executeAgentTool: AgentToolExecutor = async (name, args) => {
-  if (name === 'web_search') {
-    const query = String(args.query || '').trim();
-    if (!query) return 'No search query was provided.';
-    const result = await searchTavily(query);
-    if (!result?.results?.length) return 'No web results were available. Continue without web grounding.';
-    return [
-      result.answer ? `Answer: ${result.answer}` : '',
-      ...result.results.slice(0, 6).map((r, i) => `Source ${i + 1}: ${r.title}\nURL: ${r.url}\n${r.content}`),
-    ].filter(Boolean).join('\n\n').slice(0, 30000);
-  }
-
-  if (name === 'read_url') {
-    const url = String(args.url || '').trim();
-    if (!/^https?:\/\//i.test(url)) return 'Invalid URL. Only http/https URLs are supported.';
-    const content = await readUrlWithJina(url);
-    return content ? content.slice(0, 30000) : 'Unable to read this URL.';
-  }
-
-  if (name === 'run_code') {
-    const code = stripCodeFences(String(args.code || ''));
-    if (!code.trim()) return 'No code was provided.';
-    const output = await runCodeInDaytona(code, normalizeLanguage(args.language));
-    return output ?? 'Code execution is unavailable because the sandbox service is not configured or failed.';
-  }
-
-  return `Unknown tool: ${name}`;
-};
-
-/**
- * SERVER-SIDE RESOURCE-MANAGED EXECUTOR.
+ * UNTRACKED TOOL EXECUTOR (used by the Agent Orchestrator).
  *
- * Every tool invocation passes through the BudgetTracker before it runs:
- *   1. budget/capability gate   -> canCallTool() (also anti-loop protection)
- *   2. per-call timeout         -> runToolWithTimeout(budget.TOOL_TIMEOUT_MS)
- *   3. output clamp             -> clampToolOutput(budget.MAX_TOOL_OUTPUT_SIZE)
- *   4. accounting               -> recordToolCall() updates loop/failure state
+ * Performs argument validation, per-call timeout, and output clamping ONLY.
+ * Gating, accounting, and fencing are owned by the orchestrator's round
+ * executor so the shared BudgetTracker can never drift from the loop.
  */
-export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTracker, signal?: AbortSignal): AgentToolExecutor {
+export function createUntrackedToolExecutor(plan: BudgetPlan, signal?: AbortSignal): AgentToolExecutor {
   const budget = plan.budget;
 
   return async (name, args) => {
-    // 1. Gate: budget + capability + anti-loop. Blocked calls consume nothing.
-    const gate = tracker.canCallTool(name, args);
-    if (!gate.allowed) {
-      return `Resource manager blocked this tool call: ${gate.reason}. If you already have enough information, answer now; otherwise continue without this call.`;
+    // 1. Validate the model-generated arguments BEFORE anything runs.
+    const validation = validateToolArguments(name, args);
+    if (!validation.ok) {
+      return `Tool call rejected: ${validation.reason}. Fix the arguments or answer without this call.`;
     }
+    const safeArgs = validation.value as Record<string, unknown>;
 
-    // 2. Execute under the per-call timeout and the request-level abort signal.
-    const perCallTimeout = Math.min(budget.TOOL_TIMEOUT_MS, tracker.remainingMs > 0 ? tracker.remainingMs : budget.TOOL_TIMEOUT_MS);
+    // 2. Execute under the per-call timeout and output budget.
+    const perCallTimeout = Math.min(budget.TOOL_TIMEOUT_MS, ABSOLUTE_CEILING_BOUNDS.TOOL_TIMEOUT_MS);
     const result = await runToolWithTimeout(async () => {
       if (name === 'web_search') {
-        const query = String(args.query || '').trim();
-        if (!query) return 'No search query was provided.';
-        const searchResult = await searchTavily(query, {
+        const searchResult = await searchTavily(String(safeArgs.query), {
           maxResults: budget.MAX_SEARCH_RESULTS,
           timeoutMs: perCallTimeout,
           searchDepth: plan.classification.category === 'research' && plan.classification.complexity >= 7 ? 'advanced' : 'basic',
@@ -139,17 +55,17 @@ export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTrac
       }
 
       if (name === 'read_url') {
-        const url = String(args.url || '').trim();
-        if (!/^https?:\/\//i.test(url)) return 'Invalid URL. Only http/https URLs are supported.';
-        const content = await readUrlWithJina(url, { maxChars: budget.MAX_WEBPAGE_SIZE, timeoutMs: perCallTimeout });
+        const content = await readUrlWithJina(String(safeArgs.url), { maxChars: budget.MAX_WEBPAGE_SIZE, timeoutMs: perCallTimeout });
         return content || 'Unable to read this URL.';
       }
 
       if (name === 'run_code') {
-        const code = stripCodeFences(String(args.code || ''));
-        if (!code.trim()) return 'No code was provided.';
         const timeoutSec = Math.floor(budget.MAX_CODE_EXECUTION_TIME_MS / 1000);
-        const output = await runCodeInDaytona(code, normalizeLanguage(args.language), { timeoutSec });
+        const output = await runCodeInDaytona(
+          String(safeArgs.code),
+          safeArgs.language as 'python' | 'javascript' | 'typescript',
+          { timeoutSec },
+        );
         return output ?? 'Code execution is unavailable because the sandbox service is not configured or failed.';
       }
 
@@ -158,9 +74,51 @@ export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTrac
 
     void signal; // request-level abort is enforced by the agent loop + route
 
-    // 3 & 4. Account for the call, then clamp the returned payload.
-    tracker.recordToolCall(name, args, result.ok, result.output, result.durationMs);
-    return clampToolOutput(result.output, budget);
+    // runToolWithTimeout already wraps failures as "Tool failed: …".
+    return result.ok ? clampToolOutput(result.output, budget) : result.output;
+  };
+}
+
+/**
+ * FULL-STACK RESOURCE-MANAGED EXECUTOR (for NON-orchestrator consumers such
+ * as the Trigger.dev background context builder).
+ *
+ * Every tool invocation passes through:
+ *   1. argument validation      -> validateToolArguments() (registry, strict)
+ *   2. budget/capability gate   -> tracker.canCallTool() (also anti-loop)
+ *   3. per-call timeout         -> runToolWithTimeout(budget.TOOL_TIMEOUT_MS)
+ *   4. output clamp             -> clampToolOutput(budget.MAX_TOOL_OUTPUT_SIZE)
+ *   5. untrusted-data fencing   -> fenceToolOutput() (data never = instructions)
+ *   6. accounting               -> tracker.recordToolCall() (loop/failure state)
+ *
+ * Do NOT pass this into runAgentOrchestration — the orchestrator gates and
+ * accounts itself; double accounting would corrupt the budget.
+ */
+export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTracker, signal?: AbortSignal): AgentToolExecutor {
+  const untracked = createUntrackedToolExecutor(plan, signal);
+
+  return async (name, args) => {
+    // 1. Validate (cheap; mirrors the orchestrator's own first check).
+    const validation = validateToolArguments(name, args);
+    if (!validation.ok) {
+      tracker.recordToolCall(name, args, false, validation.reason || 'invalid arguments', 0);
+      return `Tool call rejected: ${validation.reason}. Fix the arguments or answer without this call.`;
+    }
+    const safeArgs = validation.value as Record<string, unknown>;
+
+    // 2. Gate: budget + capability + anti-loop. Blocked calls consume nothing.
+    const gate = tracker.canCallTool(name, safeArgs);
+    if (!gate.allowed) {
+      return `Resource manager blocked this tool call: ${gate.reason}. If you already have enough information, answer now; otherwise continue without this call.`;
+    }
+
+    // 3–4. Timed, clamped execution.
+    const output = await untracked(name, safeArgs, signal);
+    const failed = output.startsWith('Tool failed:');
+
+    // 5–6. Fence as untrusted data, then account for the call.
+    tracker.recordToolCall(name, safeArgs, !failed, output, 0);
+    return fenceToolOutput(name, output);
   };
 }
 
@@ -191,7 +149,8 @@ export interface AgentContextResult {
 /**
  * Classify a prompt, plan a budget, and (optionally) gather tool context under
  * full resource management. Used by background agent jobs and available to any
- * non-streaming consumer.
+ * non-streaming consumer. Payload-safe: only stable serializable primitives
+ * are returned (Trigger.dev deterministic-argument compatible).
  */
 export async function buildAgentContext(prompt: string, allowTools = true): Promise<AgentContextResult> {
   const plan = createBudgetForRequest(prompt);

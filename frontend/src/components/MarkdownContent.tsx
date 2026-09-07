@@ -1,10 +1,14 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Clipboard } from 'lucide-react';
 import type { Components } from 'react-markdown';
+import type { PluggableList } from 'unified';
 
-const remarkPlugins = [remarkGfm];
+// `remark-gfm`'s plugin type does not structurally unify with unified's
+// PluggableList under every TS resolution layout (both are the same
+// unified v11 at runtime) — this cast is compile-time only.
+const remarkPlugins = [remarkGfm] as unknown as PluggableList;
 
 interface MarkdownContentProps {
   content: string;
@@ -100,10 +104,8 @@ const markdownComponents = (onToast: (t: string) => void): Components => ({
 });
 
 /**
- * Shared markdown renderer for AbyssGPT responses.
- * Used for finished messages AND the live-streaming answer so formatting
- * appears correctly as it streams in. react-markdown escapes raw HTML,
- * keeping rendering XSS-safe.
+ * Full markdown renderer for finished messages. react-markdown escapes raw
+ * HTML, keeping rendering XSS-safe.
  */
 const MarkdownContentBase: React.FC<MarkdownContentProps> = ({ content, onToast }) => {
   return (
@@ -115,5 +117,79 @@ const MarkdownContentBase: React.FC<MarkdownContentProps> = ({ content, onToast 
 
 export const MarkdownContent = memo(
   MarkdownContentBase,
+  (prev, next) => prev.content === next.content && prev.onToast === next.onToast
+);
+
+/* ============================================================
+   STREAMING RENDERER (performance)
+
+   Re-parsing the entire accumulated text with react-markdown on
+   every stream flush makes long responses progressively slower.
+   Instead, the text is split at the last blank line into:
+     - a STABLE prefix of completed blocks, memoized on its string
+       value so react-markdown parses it exactly once, and
+     - a small LIVE tail (the paragraph currently being written)
+       that is the only part re-parsed per flush.
+
+   The split is fence-aware: if the prefix ends inside an unclosed
+   ``` code fence, the boundary moves up to include the opening
+   fence line in the tail, so the fence is never mis-parsed.
+   Minor edge cases (e.g. setext headings) only affect the transient
+   stream view — the finished message always renders through the
+   full MarkdownContent above.
+   ============================================================ */
+
+const FENCE_LINE = /^\s{0,3}(```|~~~)/;
+
+function countFenceLines(block: string): number {
+  let count = 0;
+  let lineStart = 0;
+  for (let i = 0; i <= block.length; i++) {
+    if (i === block.length || block[i] === '\n') {
+      if (FENCE_LINE.test(block.slice(lineStart, i))) count++;
+      lineStart = i + 1;
+    }
+  }
+  return count;
+}
+
+/** Split at a line boundary so prefix + tail always reconstruct the text. */
+export function splitStreamingMarkdown(text: string): [string, string] {
+  const idx = text.lastIndexOf('\n\n');
+  if (idx === -1) return ['', text];
+
+  let cut = idx + 2; // just after the blank line
+  if (cut >= text.length) return [text, ''];
+
+  if (countFenceLines(text.slice(0, cut)) % 2 === 1) {
+    // The stable prefix would end inside an unclosed code fence — move the
+    // boundary up to the start of that fence's opening line.
+    const prefix = text.slice(0, cut);
+    let lineStart = 0;
+    let lastOpener = -1;
+    for (let i = 0; i <= prefix.length; i++) {
+      if (i === prefix.length || prefix[i] === '\n') {
+        if (FENCE_LINE.test(prefix.slice(lineStart, i))) lastOpener = lineStart;
+        lineStart = i + 1;
+      }
+    }
+    cut = lastOpener >= 0 ? lastOpener : 0;
+  }
+
+  return [text.slice(0, cut), text.slice(cut)];
+}
+
+const StreamingMarkdownBase: React.FC<MarkdownContentProps> = ({ content, onToast }) => {
+  const [stable, tail] = useMemo(() => splitStreamingMarkdown(content), [content]);
+  return (
+    <>
+      {stable && <MarkdownContentBase content={stable} onToast={onToast} />}
+      <MarkdownContentBase content={tail} onToast={onToast} />
+    </>
+  );
+};
+
+export const StreamingMarkdown = memo(
+  StreamingMarkdownBase,
   (prev, next) => prev.content === next.content && prev.onToast === next.onToast
 );
