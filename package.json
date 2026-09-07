@@ -1,0 +1,9 @@
+{
+  "name": "abyssgpt",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build"
+  }
+}

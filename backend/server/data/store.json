@@ -1,0 +1,25 @@
+{
+  "users": {},
+  "conversations": {},
+  "messages": {},
+  "memories": {},
+  "configs": {
+    "settings": {
+      "appName": "AbyssGPT",
+      "welcomeMessage": "Welcome to AbyssGPT. Ask anything and get a direct, thoughtful response.",
+      "maintenanceMode": false,
+      "registrationEnabled": true,
+      "maxMessageLength": 4000,
+      "premiumPriceInr": 299,
+      "telegramUsername": "@MrNewton_2",
+      "premiumBenefits": [
+        "200 Daily Messages",
+        "30 Requests / minute",
+        "30 Message Context Window",
+        "Priority reasoning experience",
+        "Unlimited conversation history"
+      ],
+      "defaultPremiumDurationDays": 30
+    }
+  }
+}
