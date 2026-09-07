@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import { ThemeProvider } from './contexts/ThemeContext.js';
 import { ChatProvider } from './contexts/ChatContext.js';
@@ -8,41 +8,21 @@ import { ChatPage } from './pages/ChatPage.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { RegisterPage } from './pages/RegisterPage.js';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage.js';
+import { SettingsPage } from './pages/SettingsPage.js';
+import { PremiumPage } from './pages/PremiumPage.js';
+import { AdminLayout } from './pages/admin/AdminLayout.js';
+import { AdminLogin } from './pages/admin/AdminLogin.js';
 import { clearAdminToken, hasAdminToken } from './lib/api.js';
 import { AlertOctagon, LogOut } from 'lucide-react';
 import { AbyssLogo } from './components/AbyssLogo.js';
-import { Spinner } from './components/ui.js';
-
-/* Secondary views are code-split: they are not needed for the first
- * chat interaction, so they load on demand and keep the initial
- * bundle small. The core chat path stays eager. */
-const SettingsPage = lazy(() =>
-  import('./pages/SettingsPage.js').then((m) => ({ default: m.SettingsPage }))
-);
-const PremiumPage = lazy(() =>
-  import('./pages/PremiumPage.js').then((m) => ({ default: m.PremiumPage }))
-);
-const AdminLayout = lazy(() =>
-  import('./pages/admin/AdminLayout.js').then((m) => ({ default: m.AdminLayout }))
-);
-const AdminLogin = lazy(() =>
-  import('./pages/admin/AdminLogin.js').then((m) => ({ default: m.AdminLogin }))
-);
 
 type PageView = 'chat' | 'login' | 'register' | 'forgot-password' | 'settings' | 'premium' | 'admin';
 
 const MOBILE_BREAKPOINT = 760;
 const isMobileViewport = () => window.innerWidth <= MOBILE_BREAKPOINT;
 
-/** Minimal suspense fallback matching the splash look. */
-const RouteFallback: React.FC = () => (
-  <div className="splash" role="status" aria-label="Loading">
-    <Spinner size={22} />
-  </div>
-);
-
 const AppContent: React.FC = () => {
-  const { firebaseUser, userProfile, loading, logout } = useAuth();
+  const { firebaseUser, userProfile, loading, isAdmin, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<PageView>(
     () => (window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : 'chat')
   );
@@ -79,11 +59,6 @@ const AppContent: React.FC = () => {
     if (isMobileViewport()) setSidebarOpen(false);
   }, []);
 
-  const openChat = useCallback(() => setCurrentPage('chat'), []);
-  const openPremium = useCallback(() => setCurrentPage('premium'), []);
-  const openSettings = useCallback(() => setCurrentPage('settings'), []);
-  const openAdmin = useCallback(() => setCurrentPage('admin'), []);
-
   // Splash while the Firebase session is being restored.
   if (loading) {
     return (
@@ -103,21 +78,20 @@ const AppContent: React.FC = () => {
   if (currentPage === 'admin') {
     if (adminAuthenticated) {
       return (
-        <Suspense fallback={<RouteFallback />}>
-          <AdminLayout
-            onBackToChat={() => {
-              clearAdminToken();
-              setAdminAuthenticated(false);
-              openChat();
-            }}
-          />
-        </Suspense>
+        <AdminLayout
+          onBackToChat={() => {
+            clearAdminToken();
+            setAdminAuthenticated(false);
+            setCurrentPage('chat');
+          }}
+        />
       );
     }
     return (
-      <Suspense fallback={<RouteFallback />}>
-        <AdminLogin onAuthenticated={() => setAdminAuthenticated(true)} onBackToChat={openChat} />
-      </Suspense>
+      <AdminLogin
+        onAuthenticated={() => setAdminAuthenticated(true)}
+        onBackToChat={() => setCurrentPage('chat')}
+      />
     );
   }
 
@@ -162,18 +136,15 @@ const AppContent: React.FC = () => {
   // Full-page views.
   if (currentPage === 'settings') {
     return (
-      <Suspense fallback={<RouteFallback />}>
-        <SettingsPage onBack={openChat} onOpenPremium={openPremium} />
-      </Suspense>
+      <SettingsPage
+        onBack={() => setCurrentPage('chat')}
+        onOpenPremium={() => setCurrentPage('premium')}
+      />
     );
   }
 
   if (currentPage === 'premium') {
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <PremiumPage onBack={openChat} />
-      </Suspense>
-    );
+    return <PremiumPage onBack={() => setCurrentPage('chat')} />;
   }
 
   // Primary chat application layout.
@@ -182,14 +153,24 @@ const AppContent: React.FC = () => {
       <Sidebar
         isOpen={sidebarOpen}
         onCloseMobile={closeMobileSidebar}
-        onOpenSettings={openSettings}
-        onOpenAdmin={openAdmin}
-        onLogout={openChat}
+        onOpenSettings={() => setCurrentPage('settings')}
+        onOpenPremium={() => setCurrentPage('premium')}
+        onOpenAdmin={() => setCurrentPage('admin')}
+        onLogout={() => setCurrentPage('chat')}
       />
 
       <div className="main">
-        <Navbar onToggleSidebar={() => setSidebarOpen((v) => !v)} onOpenPremium={openPremium} />
-        <ChatPage onOpenPremium={openPremium} onToast={showToast} />
+        <Navbar
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          onOpenPremium={() => setCurrentPage('premium')}
+          onOpenAdmin={() => setCurrentPage('admin')}
+          onOpenAccount={() => setCurrentPage('settings')}
+        />
+        <ChatPage
+          onOpenSettings={() => setCurrentPage('settings')}
+          onOpenPremium={() => setCurrentPage('premium')}
+          onToast={showToast}
+        />
       </div>
 
       {toast && (

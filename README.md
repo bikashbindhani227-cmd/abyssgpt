@@ -314,57 +314,18 @@ User browser
    │       │
    │       └── Firebase Auth (ID token)
    │
-   └── HTTPS API (SSE: meta / thinking / chunk / done / error)
+   └── HTTPS API
            │
            ▼
      Render: Express backend
            │
-           ├── Verify Firebase ID token (identity, plan, limits — server-authoritative)
+           ├── Verify Firebase ID token
            ├── Firestore / Firebase Admin
-           │
-           ├── MODEL-AGNOSTIC AGENT STACK
-           │     MODEL_ID (opaque config, resolved per request)
-           │        ↓
-           │     modelAdapter.ts      — provider transport + response normalization
-           │        ↓                   (tool names/args/ids, finish reasons, failures)
-           │     agentOrchestrator.ts — multi-iteration loop, budget gates,
-           │        ↓                   loop protection, verification, fencing
-           │     toolRegistry.ts      — tool schemas + server-side argument validation
-           │        ↓
-           │     agentBudget.ts       — task classifier, automatic budget planner,
-           │                             server hard ceilings, shared BudgetTracker
-           │        ↓
-           ├── Tavily API   (web search)
-           ├── Jina Reader  (webpage reading)
-           ├── Daytona      (sandboxed code execution / testing)
-           └── Trigger.dev  (background agent workflows)
+           ├── AI Credits API
+           └── Tavily API (when requested)
 ```
 
-### Model-agnostic contract
-
-- `MODEL_ID` is an **opaque configuration string**. The agent stack never
-  inspects it, never branches on it, and keeps working unchanged when the
-  administrator configures any other model that speaks the provider's
-  chat-completions/tool-calling protocol.
-- Provider responses are **normalized** in `modelAdapter.ts` before the
-  orchestrator sees them: native tool calls, legacy `function_call`, missing
-  tool-call ids, object-vs-string arguments, markdown-fenced JSON, content-
-  embedded JSON tool calls, and provider-specific finish reasons all collapse
-  into one internal format.
-- The **application system prompt stays authoritative** for every model:
-  admin prompt first, then identical agent-orchestration instructions,
-  tool inventory, and an untrusted-data security rule
-  (`promptComposition.ts`). Tool output is fenced as data and can never
-  override it.
-- Model failures (empty responses, malformed calls, 4xx/5xx, timeouts) are
-  converted into typed `ModelError`s with client-safe messages; raw provider
-  bodies and model identities never reach the frontend.
-- The agent loop is bounded by the automatic budget planner and absolute
-  server ceilings; budgets adapt but can never exceed
-  `ABSOLUTE_CEILING_BOUNDS`.
-
-Secrets stay on Render. The browser never receives provider API keys or the
-configured `MODEL_ID` (the SSE `meta` event carries a neutral display label).
+Secrets stay on Render. The browser never receives provider API keys.
 
 ## 14. Final pre-launch checklist
 

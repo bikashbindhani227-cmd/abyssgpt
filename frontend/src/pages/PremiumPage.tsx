@@ -112,7 +112,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
             <div className="mb-6 flex items-baseline gap-2">
               {priceInr !== undefined ? (
                 <>
-                  <span className="tabular text-4xl font-bold tracking-tight">₹{priceInr}</span>
+                  <span className="tabular text-4xl font-extrabold tracking-tight">₹{priceInr}</span>
                   <span className="text-xs font-medium text-ink-3">/ month</span>
                 </>
               ) : (

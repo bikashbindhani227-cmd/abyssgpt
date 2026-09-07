@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronRight, Pencil, Search, Settings, Shield, Trash2, X, LogOut, SquarePen } from 'lucide-react';
-import { useChatConversations, useChatActions } from '../contexts/ChatContext.js';
+import { ChevronRight, Pencil, Search, Settings, Shield, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
+import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
 
@@ -8,16 +8,16 @@ interface SidebarProps {
   isOpen: boolean;
   onCloseMobile?: () => void;
   onOpenSettings: () => void;
+  onOpenPremium: () => void;
   onOpenAdmin: () => void;
   onLogout: () => void;
 }
 
-/** Minimal conversation rail: brand, new chat, search, recent list,
- *  account and a few real actions. Nothing decorative. */
 export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onCloseMobile,
   onOpenSettings,
+  onOpenPremium,
   onOpenAdmin,
   onLogout,
 }) => {
@@ -25,15 +25,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     conversations,
     filteredConversations,
     searchQuery,
-    activeConversationId,
-  } = useChatConversations();
-  const {
     setSearchQuery,
+    activeConversationId,
     selectConversation,
     createNewChat,
     renameConversation,
     deleteConversation,
-  } = useChatActions();
+  } = useChat();
   const { userProfile, isAdmin, isPremium, logout } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -91,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <button className="sidebar-action primary" onClick={handleNewChat}>
-          <SquarePen size={17} />
+          <FilePlus2 size={18} />
           <span>New chat</span>
         </button>
 
@@ -172,7 +170,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        <button className="account-card" onClick={onOpenSettings} aria-label="Account and settings">
+        <div className="sidebar-spacer" />
+
+        <button className={`upgrade-card${isPremium ? ' pro' : ''}`} onClick={onOpenPremium}>
+          <div>
+            <strong>{isPremium ? 'Pro plan' : 'Upgrade to Pro'}</strong>
+            <span>{isPremium ? 'Premium features unlocked' : 'Unlock more features'}</span>
+          </div>
+          <span className="upgrade-icon">
+            <Sparkles size={16} />
+          </span>
+        </button>
+
+        <button className="account-card" onClick={onOpenSettings}>
           <span className="account-avatar">
             {userProfile?.photoURL ? <img src={userProfile.photoURL} alt="" /> : userInitial}
           </span>
