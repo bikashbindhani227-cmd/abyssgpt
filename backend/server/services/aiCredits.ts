@@ -86,6 +86,13 @@ async function requestAICredits(body: Record<string, unknown>, signal?: AbortSig
   throw new Error(`AI Credits request failed after retries: ${lastError || 'unknown error'}`);
 }
 
+// Some upstream routes/models behind AI Credits do not have any endpoint that
+// supports tool/function calling for the configured MODEL_ID (e.g. "No
+// endpoints found that support tool use. Try disabling \"web_search\".",
+// HTTP 404). Detect that specific rejection so we can degrade gracefully
+// instead of failing the whole request.
+const TOOL_UNSUPPORTED_PATTERN = /no endpoints found|support tool use|does not support tools?|tool_choice|function_call/i;
+
 async function getJsonCompletion(
   messages: ChatMessagePayload[],
   tools: AgentToolDefinition[],
@@ -101,7 +108,28 @@ async function getJsonCompletion(
       : 'auto',
     stream: false,
   }, signal);
-  const raw = await response.text().catch(() => '');
+  let raw = await response.text().catch(() => '');
+
+  if (!response.ok && tools.length && TOOL_UNSUPPORTED_PATTERN.test(raw)) {
+    // The model/provider combination cannot do tool calls at all. Retry as a
+    // plain completion (no tools, no tool_choice) so the agent falls back to
+    // answering directly instead of erroring the whole request out.
+    const fallback = await requestAICredits({
+      model: MODEL_ID,
+      messages,
+      stream: false,
+    }, signal);
+    raw = await fallback.text().catch(() => '');
+    if (!fallback.ok) throw new Error(`AI Credits API returned ${fallback.status}: ${raw.slice(0, 700)}`);
+    let fallbackData: any;
+    try { fallbackData = JSON.parse(raw); } catch { throw new Error('AI Credits returned invalid JSON.'); }
+    const fallbackChoice = fallbackData?.choices?.[0];
+    return {
+      finishReason: fallbackChoice?.finish_reason,
+      message: fallbackChoice?.message,
+    };
+  }
+
   if (!response.ok) throw new Error(`AI Credits API returned ${response.status}: ${raw.slice(0, 700)}`);
   let data: any;
   try { data = JSON.parse(raw); } catch { throw new Error('AI Credits returned invalid JSON.'); }
