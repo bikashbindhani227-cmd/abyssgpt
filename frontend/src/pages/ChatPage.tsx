@@ -46,7 +46,7 @@ const EXAMPLE_PROMPTS: Array<{ icon: React.ComponentType<{ size?: number }>; lab
   },
   {
     icon: Globe,
-    label: 'Web search',
+    label: 'Latest',
     prompt: "What are this week's most important developments in AI?",
   },
   {
@@ -196,11 +196,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
       </section>
 
       <ChatComposer
-        onSend={(text, webSearch) => sendMessage(text, webSearch)}
+        onSend={(text) => sendMessage(text)}
         onStop={stopGenerating}
         isStreaming={isStreaming}
         disabled={isLimitReached}
-        onToast={onToast}
       />
     </>
   );

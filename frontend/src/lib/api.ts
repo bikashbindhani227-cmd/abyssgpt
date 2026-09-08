@@ -83,7 +83,7 @@ export interface StreamChatCallbacks {
 }
 
 export async function streamChatApi(
-  payload: { message: string; conversationId?: string; webSearch?: boolean },
+  payload: { message: string; conversationId?: string },
   callbacks: StreamChatCallbacks,
   signal?: AbortSignal
 ): Promise<void> {

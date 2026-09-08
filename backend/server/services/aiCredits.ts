@@ -147,7 +147,6 @@ async function* streamFinalCompletion(
   const response = await requestAICredits({
     model: MODEL_ID,
     messages,
-    tool_choice: 'none',
     stream: true,
   }, signal);
   if (!response.body) throw new Error('AI Credits API returned an empty stream.');

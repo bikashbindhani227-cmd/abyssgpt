@@ -19,7 +19,7 @@ interface ChatContextType {
   setSearchQuery: (q: string) => void;
   selectConversation: (id: string | null) => void;
   createNewChat: () => Promise<string>;
-  sendMessage: (text: string, webSearch?: boolean) => Promise<void>;
+  sendMessage: (text: string) => Promise<void>;
   stopGenerating: () => void;
   regenerateMessage: () => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
@@ -227,7 +227,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ]);
   }, []);
 
-  const sendMessage = async (text: string, webSearch?: boolean) => {
+  const sendMessage = async (text: string) => {
     if (!text.trim() || isStreaming) return;
     setError(null);
 
@@ -258,7 +258,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         {
           message: cleanText,
           conversationId: currentConvId || undefined,
-          webSearch,
         },
         {
           onMeta: (meta) => {

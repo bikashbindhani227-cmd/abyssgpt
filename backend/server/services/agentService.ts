@@ -77,7 +77,8 @@ export const executeAgentTool: AgentToolExecutor = async (name, args) => {
     const query = String(args.query || '').trim();
     if (!query) return 'No search query was provided.';
     const result = await searchTavily(query);
-    if (!result?.results?.length) return 'No web results were available. Continue without web grounding.';
+    if (!result) throw new Error('Live web search failed or is unavailable. Do not claim that live search succeeded.');
+    if (!result.results.length) return 'Live web search completed but returned no results.';
     return [
       result.answer ? `Answer: ${result.answer}` : '',
       ...result.results.slice(0, 6).map((r, i) => `Source ${i + 1}: ${r.title}\nURL: ${r.url}\n${r.content}`),
@@ -88,14 +89,16 @@ export const executeAgentTool: AgentToolExecutor = async (name, args) => {
     const url = String(args.url || '').trim();
     if (!/^https?:\/\//i.test(url)) return 'Invalid URL. Only http/https URLs are supported.';
     const content = await readUrlWithJina(url);
-    return content ? content.slice(0, 30000) : 'Unable to read this URL.';
+    if (content == null) throw new Error('Webpage reader failed or is unavailable. Do not claim the page was successfully read.');
+    return content.slice(0, 30000) || 'The page was read but contained no extractable text.';
   }
 
   if (name === 'run_code') {
     const code = stripCodeFences(String(args.code || ''));
     if (!code.trim()) return 'No code was provided.';
     const output = await runCodeInDaytona(code, normalizeLanguage(args.language));
-    return output ?? 'Code execution is unavailable because the sandbox service is not configured or failed.';
+    if (output == null) throw new Error('Code execution failed or the sandbox is unavailable. Do not claim that the code was executed successfully.');
+    return output;
   }
 
   return `Unknown tool: ${name}`;
@@ -131,7 +134,8 @@ export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTrac
           timeoutMs: perCallTimeout,
           searchDepth: plan.classification.category === 'research' && plan.classification.complexity >= 7 ? 'advanced' : 'basic',
         });
-        if (!searchResult?.results?.length) return 'No web results were available. Continue without web grounding.';
+        if (!searchResult) throw new Error('Live web search failed or is unavailable. Do not claim that live search succeeded.');
+        if (!searchResult.results.length) return 'Live web search completed but returned no results.';
         return [
           searchResult.answer ? `Answer: ${searchResult.answer}` : '',
           ...searchResult.results.slice(0, budget.MAX_SEARCH_RESULTS).map((r, i) => `Source ${i + 1}: ${r.title}\nURL: ${r.url}\n${r.content}`),
@@ -142,7 +146,8 @@ export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTrac
         const url = String(args.url || '').trim();
         if (!/^https?:\/\//i.test(url)) return 'Invalid URL. Only http/https URLs are supported.';
         const content = await readUrlWithJina(url, { maxChars: budget.MAX_WEBPAGE_SIZE, timeoutMs: perCallTimeout });
-        return content || 'Unable to read this URL.';
+        if (content == null) throw new Error('Webpage reader failed or is unavailable. Do not claim the page was successfully read.');
+        return content || 'The page was read but contained no extractable text.';
       }
 
       if (name === 'run_code') {
@@ -150,7 +155,8 @@ export function createBudgetedToolExecutor(plan: BudgetPlan, tracker: BudgetTrac
         if (!code.trim()) return 'No code was provided.';
         const timeoutSec = Math.floor(budget.MAX_CODE_EXECUTION_TIME_MS / 1000);
         const output = await runCodeInDaytona(code, normalizeLanguage(args.language), { timeoutSec });
-        return output ?? 'Code execution is unavailable because the sandbox service is not configured or failed.';
+        if (output == null) throw new Error('Code execution failed or the sandbox is unavailable. Do not claim that the code was executed successfully.');
+        return output;
       }
 
       return `Unknown tool: ${name}`;

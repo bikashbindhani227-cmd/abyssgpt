@@ -113,7 +113,7 @@ Add this to Render only:
 TAVILY_API_KEY=your_tavily_key
 ```
 
-The browser only sends `webSearch: true/false`. The actual Tavily request is made by the backend.
+The browser does not expose a web-search toggle. The backend automatically decides when live web grounding is needed and performs the Tavily request server-side.
 
 ## 6. Deploy backend to Render — exact settings
 
@@ -457,3 +457,6 @@ The BudgetTracker fingerprints every call (tool + normalized arguments + result 
 - The planner is NOT the final authority; the backend enforces everything.
 - Model-generated values are never trusted; the model can only choose *whether* to call a tool, never the limits.
 - Ceilings live in backend configuration only; nothing is exposed to the frontend, and budget diagnostics are server-log-only.
+## Automatic web grounding
+
+AbyssGPT does not expose a manual web-search toggle in the chat composer. The backend classifies each request and automatically grounds live-information requests with Tavily and explicit URL requests with Jina Reader. This is server-side behavior and remains independent of model-native tool-calling support.
