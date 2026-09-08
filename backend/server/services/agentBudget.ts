@@ -377,6 +377,9 @@ export class BudgetTracker {
   private history: CallRecord[] = [];
   private identicalResultStreak = 0;
   private consecutiveFailures = 0;
+  private lastToolName: string | null = null;
+  private previousToolName: string | null = null;
+  private oscillationCount = 0;
   private forcedStop: TerminationCheck | null = null;
   private lastActivityAt: number;
 
@@ -504,6 +507,14 @@ export class BudgetTracker {
 
     this.consecutiveFailures = ok ? 0 : this.consecutiveFailures + 1;
 
+    if (this.lastToolName && this.previousToolName && this.lastToolName === name && this.previousToolName !== name) {
+      this.oscillationCount += 1;
+    } else if (this.lastToolName !== name) {
+      this.oscillationCount = Math.max(0, this.oscillationCount - 1);
+    }
+    this.previousToolName = this.lastToolName;
+    this.lastToolName = name;
+
     this.history.push({ name, fingerprint: fp, ok, resultHash, durationMs, at: Date.now() });
 
     // Same tool call repeatedly producing the same result -> no progress.
@@ -513,6 +524,9 @@ export class BudgetTracker {
     // A tool failing repeatedly -> stop wasting resources.
     if (!ok && this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       this.requestStop(`tool failed ${this.consecutiveFailures} times in a row`);
+    }
+    if (this.oscillationCount >= 4) {
+      this.requestStop('action oscillation detected');
     }
   }
 
@@ -589,6 +603,7 @@ export class BudgetTracker {
       elapsedMs: this.elapsedMs,
       totalTimeoutMs: this.budget.TOTAL_AGENT_TIMEOUT_MS,
       stopped: this.forcedStop?.reason ?? null,
+      oscillationCount: this.oscillationCount,
     };
   }
 }

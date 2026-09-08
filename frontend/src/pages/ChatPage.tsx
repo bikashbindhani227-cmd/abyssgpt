@@ -7,6 +7,7 @@ import { ChatComposer } from '../components/ChatComposer.js';
 import { MarkdownContent } from '../components/MarkdownContent.js';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 import { ChatSkeleton } from '../components/ui.js';
+import { AgentActivity } from '../components/AgentActivity.js';
 
 interface ChatPageProps {
   onOpenSettings: () => void;
@@ -62,6 +63,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     isStreaming,
     streamingContent,
     thinkingText,
+    agentActivity,
     isLoadingMessages,
     error,
     clearError,
@@ -162,6 +164,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 </div>
                 <div className="msg-body">
                   <div className="msg-role">AbyssGPT</div>
+                  <AgentActivity items={agentActivity} />
                   {/* Pre-first-token progress states; once content arrives the
                       caret itself signals ongoing generation (calmer, no dupes). */}
                   {!streamingContent && (

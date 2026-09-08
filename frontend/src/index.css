@@ -1298,3 +1298,136 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
   white-space: nowrap;
   border: 0;
 }
+
+
+/* ============================================================
+   HACKERAI-INSPIRED CHAT PRESENTATION
+   Presentation-only layer: keeps AbyssGPT data flow and components intact.
+   ============================================================ */
+.chat {
+  background: var(--bg);
+}
+.chat-inner {
+  width: min(768px, 100%);
+  padding: 28px 24px 210px;
+}
+.message {
+  gap: 0;
+  margin-bottom: 30px;
+}
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-radius: 9px;
+  margin-right: 12px;
+  background: transparent;
+  border-color: transparent;
+}
+.message.user .msg-avatar {
+  background: transparent;
+  color: var(--text-3);
+}
+.msg-role {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.msg-content {
+  font-size: 15.5px;
+  line-height: 1.78;
+}
+.message.user .msg-content {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 18px;
+  padding: 11px 15px;
+  box-shadow: none;
+}
+.message.assistant .msg-content {
+  max-width: 100%;
+}
+.msg-actions {
+  margin-top: 9px;
+}
+
+.composer-wrap {
+  padding: 0 20px 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 68%, color-mix(in srgb, var(--bg) 84%, transparent) 88%, transparent);
+}
+.app:not(.sidebar-collapsed) .composer-wrap { left: 284px; }
+.composer {
+  width: min(768px, 100%);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+  border-color: var(--border-strong);
+  box-shadow: 0 12px 35px -20px rgba(0,0,0,.5);
+}
+.composer.focused {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-strong));
+  box-shadow: 0 0 0 3px var(--ring), 0 12px 35px -20px rgba(0,0,0,.5);
+}
+.abyss-input {
+  min-height: 58px;
+  padding: 15px 16px 6px;
+  font-size: 15px;
+}
+.composer-foot {
+  padding-top: 7px;
+  font-size: 10px;
+}
+
+/* Agent work timeline — modeled after HackerAI's quiet, collapsible work rows. */
+.agent-activity {
+  width: 100%;
+  margin: 2px 0 12px;
+}
+.agent-activity-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  padding: 4px 0;
+  text-align: left;
+  font-size: 13px;
+}
+.agent-activity-head:hover { color: var(--text); }
+.agent-activity-icon { color: var(--text-3); display: inline-flex; align-items: center; }
+.agent-activity-title { font-weight: 560; }
+.agent-activity-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+.agent-activity-chevron { margin-left: auto; color: var(--text-3); transition: transform .18s ease; }
+.agent-activity[data-open="true"] .agent-activity-chevron { transform: rotate(180deg); }
+.agent-activity-body { margin-top: 5px; padding-left: 23px; }
+.agent-activity-timeline { border-left: 1px solid var(--border); padding-left: 13px; display: flex; flex-direction: column; gap: 10px; }
+.agent-activity-row { display: flex; gap: 10px; min-width: 0; }
+.agent-activity-row-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; color: var(--text-3); margin-left: -22px; background: var(--bg); }
+.agent-activity-row-icon.done { color: var(--text-3); }
+.agent-activity-row-icon.error { color: var(--error); }
+.agent-activity-row-main { min-width: 0; flex: 1; }
+.agent-activity-row-title { display:flex; align-items:baseline; gap:8px; font-size:12.5px; color:var(--text-2); }
+.agent-activity-time { color: var(--text-3); font-size: 10.5px; margin-left:auto; flex:0 0 auto; }
+.agent-activity-row-detail { margin-top:2px; font-size:11.5px; color:var(--text-3); overflow-wrap:anywhere; }
+.agent-activity-footer { margin-top:9px; font-size:10.5px; color:var(--text-3); }
+.agent-activity-spin { animation: agent-spin .9s linear infinite; }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+.agent-sources { display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:7px; margin-top:8px; }
+.agent-source { min-width:0; display:flex; gap:7px; align-items:flex-start; border:1px solid var(--border); background:var(--surface); border-radius:11px; padding:8px 9px; text-decoration:none; color:var(--text); transition:background .15s ease,border-color .15s ease; }
+.agent-source:hover { background:var(--surface-2); border-color:var(--border-strong); }
+.agent-source-favicon { width:18px; height:18px; border-radius:5px; border:1px solid var(--border); display:grid; place-items:center; flex:0 0 auto; font-size:10px; color:var(--text-3); }
+.agent-source-text { min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
+.agent-source-title { font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.agent-source-url { font-size:9.5px; color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+@media (max-width: 760px) {
+  .chat-inner { padding: 20px 16px 190px; }
+  .composer-wrap { padding-left: 12px; padding-right: 12px; }
+  .app:not(.sidebar-collapsed) .composer-wrap { left: 0; }
+  .agent-sources { grid-template-columns: 1fr; }
+}
