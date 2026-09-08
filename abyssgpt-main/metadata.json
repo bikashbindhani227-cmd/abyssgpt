@@ -1,0 +1,6 @@
+{
+  "name": "AbyssGPT",
+  "description": "Modern high-reasoning AI chatbot assistant powered by conversational memory, fast streaming responses, and intuitive chat interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
