@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { apiRequest, streamChatApi } from '../lib/api.js';
 import { useAuth } from './AuthContext.js';
-import type { Conversation, ChatMessage } from '../types.js';
+import type { Conversation, ChatMessage, AgentToolEvent } from '../types.js';
 
 interface ChatContextType {
   conversations: Conversation[];
@@ -14,6 +14,8 @@ interface ChatContextType {
   streamingContent: string;
   thinkingText: string | null;
   agentSteps: string[];
+  agentEvents: AgentToolEvent[];
+  lastCompletedAgentEvents: AgentToolEvent[];
   error: string | null;
   searchQuery: string;
   filteredConversations: Conversation[];
@@ -43,6 +45,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingText, setThinkingText] = useState<string | null>(null);
   const [agentSteps, setAgentSteps] = useState<string[]>([]);
+  const [agentEvents, setAgentEvents] = useState<AgentToolEvent[]>([]);
+  const [lastCompletedAgentEvents, setLastCompletedAgentEvents] = useState<AgentToolEvent[]>([]);
+  const agentEventsRef = useRef<AgentToolEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -87,6 +92,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const next = [...prev, normalized];
       return next.length > 8 ? next.slice(-8) : next;
     });
+  }, []);
+
+  const pushAgentEvent = useCallback((event: AgentToolEvent) => {
+    setAgentEvents((prev) => {
+      const next = [...prev];
+      const lastIndex = next.findIndex((item) => item.name === event.name && item.status === 'started' && event.status !== 'started');
+      if (lastIndex >= 0) {
+        next[lastIndex] = { ...next[lastIndex], ...event };
+      } else {
+        next.push(event);
+      }
+      return next.slice(-10);
+    });
+    const refNext = [...agentEventsRef.current];
+    const refIndex = refNext.findIndex((item) => item.name === event.name && item.status === 'started' && event.status !== 'started');
+    if (refIndex >= 0) refNext[refIndex] = { ...refNext[refIndex], ...event };
+    else refNext.push(event);
+    agentEventsRef.current = refNext.slice(-10);
   }, []);
 
   // Load conversations when user logs in
@@ -201,6 +224,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsStreaming(false);
     setThinkingText(null);
     setAgentSteps([]);
+    setAgentEvents([]);
+    agentEventsRef.current = [];
   };
 
   // Human-friendly wording for stream-level failures. Never leaks
@@ -276,6 +301,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     streamTextRef.current = '';
     setThinkingText('Reasoning...');
     setAgentSteps(['Planning']);
+    setAgentEvents([]);
+    agentEventsRef.current = [];
+    setLastCompletedAgentEvents([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -297,6 +325,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setThinkingText(th);
             pushAgentStep(friendlyAgentStatus(th));
           },
+          onToolEvent: (event) => {
+            pushAgentEvent(event);
+            const label = event.name === 'web_search' ? 'Searching the web' : event.name === 'read_url' ? 'Reading sources' : event.name === 'run_code' ? 'Executing code' : 'Using a tool';
+            pushAgentStep(label);
+          },
           onChunk: (chunk) => {
             setThinkingText(null);
             queueStreamChunk(chunk);
@@ -312,6 +345,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             setIsStreaming(false);
             setThinkingText(null);
+            setLastCompletedAgentEvents(agentEventsRef.current);
             abortControllerRef.current = null;
 
             // Put the completed assistant message into the UI immediately; do not wait for Firestore.
@@ -380,6 +414,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStreamingContent('');
     setThinkingText('Regenerating with deep reasoning...');
     setAgentSteps(['Planning']);
+    setAgentEvents([]);
+    agentEventsRef.current = [];
+    setLastCompletedAgentEvents([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -392,6 +429,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         {
           onThinking: (th) => { setThinkingText(th); pushAgentStep(friendlyAgentStatus(th)); },
+          onToolEvent: (event) => {
+            pushAgentEvent(event);
+            const label = event.name === 'web_search' ? 'Searching the web' : event.name === 'read_url' ? 'Reading sources' : event.name === 'run_code' ? 'Executing code' : 'Using a tool';
+            pushAgentStep(label);
+          },
           onChunk: (chunk) => {
             setThinkingText(null);
             queueStreamChunk(chunk);
@@ -400,6 +442,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             flushStreamBuffer();
             setIsStreaming(false);
             setThinkingText(null);
+            setLastCompletedAgentEvents(agentEventsRef.current);
             abortControllerRef.current = null;
             refreshProfile();
             const updated = await apiRequest<ChatMessage[]>(
@@ -488,6 +531,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         streamingContent,
         thinkingText,
         agentSteps,
+        agentEvents,
+        lastCompletedAgentEvents,
         error,
         searchQuery,
         filteredConversations,

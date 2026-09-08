@@ -64,6 +64,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     streamingContent,
     thinkingText,
     agentSteps,
+    agentEvents,
+    lastCompletedAgentEvents,
     isLoadingMessages,
     error,
     clearError,
@@ -154,6 +156,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 }
                 onDelete={msg.isError ? undefined : deleteMessageItem}
                 onToast={onToast}
+                agentEvents={index === messages.length - 1 && msg.role === 'assistant' ? lastCompletedAgentEvents : undefined}
               />
             ))}
 
@@ -168,6 +171,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                       caret itself signals ongoing generation (calmer, no dupes). */}
                   <AgentActivity
                     steps={agentSteps.length ? agentSteps : [friendlyStatus(thinkingText)]}
+                    events={agentEvents}
                     active
                   />
                   {streamingContent && (
