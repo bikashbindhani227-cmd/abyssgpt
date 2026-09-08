@@ -1,6 +1,53 @@
 # AbyssGPT — Production Deployment Guide
 
-AbyssGPT is a mobile-first AI chat application with Firebase Authentication, Firestore-backed user/conversation data, admin controls, optional Tavily web search, premium plans, and **AI Credits as the only AI generation provider**.
+> **Production-first AI chat application** — fast streaming chat, Firebase auth, Firestore conversations, premium controls, automatic web grounding, and a model-agnostic agent architecture.
+
+AbyssGPT is a mobile-first AI chat application with Firebase Authentication, Firestore-backed user/conversation data, admin controls, premium plans, and **AI Credits as the only AI generation provider**. Live web requests are automatically grounded by the backend; there is no manual web-search toggle in the chat composer.
+
+## Project at a glance
+
+```text
+User
+  ↓
+React + Vite frontend (Vercel)
+  ↓ Firebase ID token
+Node + Express backend (Render)
+  ↓
+Automatic task classification
+  ↓
+Budget planner + hard server ceilings
+  ↓
+Model (MODEL_ID — replaceable)
+  ├─ Tavily → live/current web research
+  ├─ Jina Reader → explicit URL/page reading
+  ├─ Daytona → code execution/testing
+  └─ Trigger.dev → background/long-running workflows
+  ↓
+Observe → iterate → verify → stream final answer
+```
+
+### Production principles
+
+- **Backend is the source of truth** for authentication, plans, limits, admin permissions, tool execution, and agent budgets.
+- **One AI provider path:** AI Credits only; no Gemini or hidden model fallback.
+- **Model-agnostic orchestration:** agent logic is not tied to a specific model name or proprietary reasoning format.
+- **Automatic tools:** the backend decides when web grounding or URL reading is justified; client-side toggles cannot raise privileges or budgets.
+- **No fake tool results:** failed tools fail honestly, and untrusted web/code output is treated as data, not instructions.
+- **Hard ceilings win:** the model can never increase steps, tool calls, output size, or timeouts beyond backend-enforced limits.
+- **Backward-compatible UI:** the chat experience remains focused on messaging; search in the sidebar remains conversation search.
+
+## Production security baseline
+
+The frontend deployment sets browser security headers including HSTS, Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy. The frontend also ships a real static 404 page and does not rewrite arbitrary unknown paths into `index.html`.
+
+Secrets belong on Render only. Never ship `AICREDITS_API_KEY`, `TAVILY_API_KEY`, Firebase Admin credentials, or `ADMIN_PASSWORD` as `VITE_` variables. Public Firebase web configuration is intentionally separated from server credentials.
+
+## SEO / AI-discovery baseline
+
+The frontend includes a canonical URL, Open Graph and Twitter cards, a 1200×630 social image, Apple touch icon, JSON-LD structured data, sitemap with `lastmod`, robots.txt, `llms.txt`, an accessible skip link, crawlable product context, and semantic site-information pages for About, Privacy, Terms, and Contact. The production SPA rewrite is limited to `/admin`, so unknown URLs can return a real 404 response.
+
+Re-run an SEO audit after deployment. The authoritative production hostname should be reflected in the canonical URL and sitemap if you later attach a custom domain.
+
 
 The frontend is built with React + Vite and is designed for Vercel. The backend is Node.js + Express and has a dedicated `backend/` directory so Render can use **Root Directory = `backend`** exactly as requested.
 
@@ -105,7 +152,7 @@ to:
 https://api.aicredits.in/v1/chat/completions
 ```
 
-## 5. Tavily web search (optional)
+## 5. Tavily web search (automatic)
 
 Add this to Render only:
 
@@ -113,7 +160,7 @@ Add this to Render only:
 TAVILY_API_KEY=your_tavily_key
 ```
 
-The browser does not expose a web-search toggle. The backend automatically decides when live web grounding is needed and performs the Tavily request server-side.
+The browser does not expose a web-search toggle. The backend automatically decides when live web grounding is needed and performs the Tavily request server-side. If the key is absent or Tavily fails, the backend reports the failure honestly instead of fabricating search results.
 
 ## 6. Deploy backend to Render — exact settings
 
@@ -460,3 +507,48 @@ The BudgetTracker fingerprints every call (tool + normalized arguments + result 
 ## Automatic web grounding
 
 AbyssGPT does not expose a manual web-search toggle in the chat composer. The backend classifies each request and automatically grounds live-information requests with Tavily and explicit URL requests with Jina Reader. This is server-side behavior and remains independent of model-native tool-calling support.
+
+
+
+## Production launch checklist
+
+### Vercel
+
+1. Set **Root Directory = `frontend`**.
+2. Deploy from `main` or connect the Git repository for automatic deployments.
+3. Set `VITE_API_BASE_URL` to the live Render backend URL.
+4. Add the final production hostname to Firebase Authentication → Authorized domains.
+
+### Render
+
+1. Set **Root Directory = `backend`**.
+2. Build with `npm install` and `npm run build`; run the generated server as configured by the project.
+3. Set all server-only environment variables, including AI Credits, Firebase Admin, Tavily, admin controls, and agent ceilings.
+4. Keep `ADMIN_PASSWORD`, private keys, and provider keys out of the frontend.
+
+### Smoke test after every deployment
+
+```text
+/health                 → backend reachable
+/                       → frontend loads
+/auth                   → login/register flow works
+/api/chat/stream        → streaming works
+Current-info question   → automatic web grounding
+Explicit URL question   → automatic page reading
+Coding request          → agent/tool path can verify code when configured
+/admin                  → admin authentication still protected
+Unknown URL             → real 404 response
+```
+
+## Known operational notes
+
+- The first Render request may be slower when the service has been sleeping.
+- Tavily, Jina, Daytona, and Trigger.dev are server-side capabilities; provider names are intentionally not shown in the normal chat UI.
+- Model availability and tool support are provider-dependent. The agent architecture is model-agnostic, but it does not invent unsupported provider features.
+- Re-run build checks after dependency changes:
+
+```bash
+npm --prefix backend run build
+npm --prefix frontend run build
+git diff --check
+```

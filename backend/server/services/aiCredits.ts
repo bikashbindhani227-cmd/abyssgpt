@@ -288,7 +288,7 @@ export async function* streamAgenticCompletion(
       tool_calls: calls,
     });
 
-    const toolCallsBefore = tracker.toolCallsUsedCount;
+    const toolCallsBefore = sharedTracker.toolCallsUsedCount;
 
     yield { type: 'thinking', text: calls.length === 1 ? 'Running the tool…' : `Running ${calls.length} tools in parallel…` };
 
@@ -335,7 +335,7 @@ export async function* streamAgenticCompletion(
         makingProgress &&
         (resolvedPlan.classification.category === 'research' || resolvedPlan.classification.complexity >= 7)
       ) {
-        tracker.adapt('expand', 'complex research in progress');
+        sharedTracker.adapt('expand', 'complex research in progress');
         expandedOnce = true;
         continue;
       }
@@ -377,7 +377,7 @@ export async function generateConversationSummary(
     stream: false,
   });
   if (!response.ok) return '';
-  const data = await response.json().catch(() => ({}));
+  const data: any = await response.json().catch(() => ({}));
   return data?.choices?.[0]?.message?.content || '';
 }
 
