@@ -1,85 +1,87 @@
 import React, { useMemo, useState } from 'react';
-import { Brain, Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Search, Terminal, Globe } from 'lucide-react';
-import type { AgentToolEvent } from '../types.js';
+import { ChevronDown, CheckCircle2, Circle, Search, BookOpen, Code2, Sparkles, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 
-interface AgentActivityProps {
-  steps?: string[];
-  events?: AgentToolEvent[];
-  active?: boolean;
-  compact?: boolean;
+export interface AgentSource {
+  title: string;
+  url: string;
 }
 
-const toolMeta = (name: string) => {
-  if (name === 'web_search') return { label: 'Search the web', icon: Search };
-  if (name === 'read_url') return { label: 'Read source', icon: Globe };
-  if (name === 'run_code') return { label: 'Run code', icon: Terminal };
-  return { label: 'Use tool', icon: Brain };
-};
+export interface AgentActivityItem {
+  id: string;
+  tool: 'search' | 'read' | 'code' | 'think' | 'verify' | 'tool';
+  title: string;
+  detail?: string;
+  status: 'running' | 'done' | 'error';
+  sources?: AgentSource[];
+  startedAt: number;
+  completedAt?: number;
+}
 
-export const AgentActivity: React.FC<AgentActivityProps> = ({ steps = [], events = [], active = false, compact = false }) => {
-  const [open, setOpen] = useState(active);
-  const normalized = useMemo(() => {
-    const seen = new Set<string>();
-    return steps.map((step) => step.trim()).filter(Boolean).filter((step) => {
-      const key = step.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [steps]);
+function iconFor(tool: AgentActivityItem['tool'], status: AgentActivityItem['status']) {
+  if (status === 'running') return <Loader2 size={15} className="agent-activity-spin" aria-hidden="true" />;
+  if (status === 'error') return <AlertCircle size={15} aria-hidden="true" />;
+  switch (tool) {
+    case 'search': return <Search size={15} aria-hidden="true" />;
+    case 'read': return <BookOpen size={15} aria-hidden="true" />;
+    case 'code': return <Code2 size={15} aria-hidden="true" />;
+    case 'verify': return <CheckCircle2 size={15} aria-hidden="true" />;
+    case 'think': return <Sparkles size={15} aria-hidden="true" />;
+    default: return <Circle size={15} aria-hidden="true" />;
+  }
+}
 
-  if (!normalized.length && !events.length && !active) return null;
-  const current = normalized[normalized.length - 1] || (active ? 'Working' : 'Completed');
+function elapsed(item: AgentActivityItem) {
+  const ms = (item.completedAt ?? Date.now()) - item.startedAt;
+  if (ms < 1000) return 'just now';
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+}
+
+export const AgentActivity: React.FC<{ items: AgentActivityItem[]; compact?: boolean }> = ({ items, compact = false }) => {
+  const [open, setOpen] = useState(false);
+  const active = useMemo(() => items.find((item) => item.status === 'running') ?? items[items.length - 1], [items]);
+  if (!items.length) return null;
+  const hasSources = items.some((item) => (item.sources?.length ?? 0) > 0);
 
   return (
-    <div className={`agent-activity${compact ? ' compact' : ''}`} data-testid="agent-activity">
-      <button type="button" className="agent-activity-trigger" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        {active ? <Loader2 className="agent-activity-icon spin" size={15} /> : <Brain className="agent-activity-icon" size={15} />}
-        <span className={active ? 'agent-activity-current shimmer-text' : 'agent-activity-current'}>{current}</span>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+    <div className={`agent-activity ${compact ? 'compact' : ''}`} data-open={open ? 'true' : 'false'}>
+      <button type="button" className="agent-activity-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="agent-activity-icon">{active ? iconFor(active.tool, active.status) : <Sparkles size={15} />}</span>
+        <span className="agent-activity-title">{active?.title || 'Working'}</span>
+        {active?.detail && <span className="agent-activity-detail">{active.detail}</span>}
+        <ChevronDown size={15} className="agent-activity-chevron" aria-hidden="true" />
       </button>
 
-      {open && (normalized.length > 0 || events.length > 0) && (
-        <div className="agent-activity-panel">
-          {normalized.map((step, index) => {
-            const isLast = index === normalized.length - 1;
-            return (
-              <div className="agent-activity-step" role="listitem" key={`${step}-${index}`}>
-                <span className={`agent-activity-check${isLast && active ? ' active' : ''}`}>
-                  {isLast && active ? <Loader2 size={12} className="spin" /> : <Check size={11} />}
-                </span>
-                <span>{step}</span>
-              </div>
-            );
-          })}
-
-          {events.map((event, index) => {
-            const meta = toolMeta(event.name);
-            const Icon = meta.icon;
-            const pending = event.status === 'started' && active;
-            return (
-              <div className="agent-tool-card" key={`${event.name}-${event.target || ''}-${index}`}>
-                <div className="agent-tool-icon"><Icon size={14} /></div>
-                <div className="agent-tool-main">
-                  <div className="agent-tool-title">
-                    <span>{pending ? meta.label : event.status === 'failed' ? `${meta.label} failed` : meta.label}</span>
-                    {pending ? <Loader2 size={12} className="spin" /> : event.status === 'completed' ? <Check size={12} /> : null}
+      {open && (
+        <div className="agent-activity-body">
+          <div className="agent-activity-timeline">
+            {items.map((item) => (
+              <div className="agent-activity-row" key={item.id}>
+                <span className={`agent-activity-row-icon ${item.status}`}>{iconFor(item.tool, item.status)}</span>
+                <div className="agent-activity-row-main">
+                  <div className="agent-activity-row-title">
+                    <span>{item.title}</span>
+                    <span className="agent-activity-time">{elapsed(item)}</span>
                   </div>
-                  {event.target && <div className="agent-tool-target">{event.target}</div>}
-                  {event.sources && event.sources.length > 0 && (
-                    <div className="agent-source-list">
-                      {event.sources.slice(0, 6).map((source) => (
-                        <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="agent-source-link">
-                          <span>{source.title || source.url}</span><ExternalLink size={11} />
+                  {item.detail && <div className="agent-activity-row-detail">{item.detail}</div>}
+                  {item.sources?.length ? (
+                    <div className="agent-sources">
+                      {item.sources.slice(0, 6).map((source) => (
+                        <a className="agent-source" key={source.url} href={source.url} target="_blank" rel="noreferrer noopener">
+                          <span className="agent-source-favicon" aria-hidden="true">↗</span>
+                          <span className="agent-source-text">
+                            <span className="agent-source-title">{source.title || source.url}</span>
+                            <span className="agent-source-url">{source.url}</span>
+                          </span>
+                          <ExternalLink size={13} aria-hidden="true" />
                         </a>
                       ))}
                     </div>
-                  )}
-                  {event.preview && !event.sources?.length && <div className="agent-tool-preview">{event.preview}</div>}
+                  ) : null}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+          {hasSources && <div className="agent-activity-footer">Sources were gathered by the agent and may contain errors.</div>}
         </div>
       )}
     </div>

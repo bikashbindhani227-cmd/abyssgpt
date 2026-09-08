@@ -552,7 +552,3 @@ npm --prefix backend run build
 npm --prefix frontend run build
 git diff --check
 ```
-
-
-## Response UX
-The chat UI includes a compact, collapsible agent-activity timeline that surfaces only safe execution states (planning, searching, reading, executing, writing). It does not expose private chain-of-thought.

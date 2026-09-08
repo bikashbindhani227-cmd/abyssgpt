@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Clipboard, RotateCcw, Trash2, AlertTriangle } from 'lucide-react';
 import { MarkdownContent } from './MarkdownContent.js';
-import type { ChatMessage, AgentToolEvent } from '../types.js';
-import { AgentActivity } from './AgentActivity.js';
+import type { ChatMessage } from '../types.js';
 
 interface ChatMessageItemProps {
   message: ChatMessage;
@@ -11,7 +10,6 @@ interface ChatMessageItemProps {
   onRegenerate?: () => void;
   onDelete?: (id: string) => void;
   onToast: (text: string) => void;
-  agentEvents?: AgentToolEvent[];
 }
 
 export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
@@ -21,7 +19,6 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
   onRegenerate,
   onDelete,
   onToast,
-  agentEvents = [],
 }) => {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
@@ -48,10 +45,6 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
           {isUser ? message.content : <MarkdownContent content={message.content} onToast={onToast} />}
           {isStreaming && <span className="stream-caret" aria-hidden="true" />}
         </div>
-
-        {!isUser && agentEvents.length > 0 && (
-          <AgentActivity events={agentEvents} active={false} compact />
-        )}
 
         <div className="msg-actions">
           <button
@@ -113,6 +106,5 @@ export const ChatMessageItem = React.memo(ChatMessageItemBase, (prev, next) =>
   prev.isStreaming === next.isStreaming &&
   prev.onRegenerate === next.onRegenerate &&
   prev.onDelete === next.onDelete &&
-  prev.onToast === next.onToast &&
-  prev.agentEvents === next.agentEvents
+  prev.onToast === next.onToast
 );

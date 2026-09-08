@@ -1,7 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { apiRequest, streamChatApi } from '../lib/api.js';
 import { useAuth } from './AuthContext.js';
-import type { Conversation, ChatMessage, AgentToolEvent } from '../types.js';
+import type { Conversation, ChatMessage } from '../types.js';
+
+export interface AgentActivityEvent {
+  id: string;
+  tool: 'search' | 'read' | 'code' | 'think' | 'verify' | 'tool';
+  title: string;
+  detail?: string;
+  status: 'running' | 'done' | 'error';
+  sources?: Array<{ title: string; url: string }>;
+  startedAt: number;
+  completedAt?: number;
+}
 
 interface ChatContextType {
   conversations: Conversation[];
@@ -13,9 +24,7 @@ interface ChatContextType {
   isStreaming: boolean;
   streamingContent: string;
   thinkingText: string | null;
-  agentSteps: string[];
-  agentEvents: AgentToolEvent[];
-  lastCompletedAgentEvents: AgentToolEvent[];
+  agentActivity: AgentActivityEvent[];
   error: string | null;
   searchQuery: string;
   filteredConversations: Conversation[];
@@ -44,10 +53,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingText, setThinkingText] = useState<string | null>(null);
-  const [agentSteps, setAgentSteps] = useState<string[]>([]);
-  const [agentEvents, setAgentEvents] = useState<AgentToolEvent[]>([]);
-  const [lastCompletedAgentEvents, setLastCompletedAgentEvents] = useState<AgentToolEvent[]>([]);
-  const agentEventsRef = useRef<AgentToolEvent[]>([]);
+  const [agentActivity, setAgentActivity] = useState<AgentActivityEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -80,36 +86,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     streamBufferRef.current = '';
     streamTextRef.current = '';
-  }, []);
-
-  const pushAgentStep = useCallback((raw: string | null | undefined) => {
-    if (!raw) return;
-    const normalized = raw.trim();
-    if (!normalized) return;
-    setAgentSteps((prev) => {
-      const key = normalized.toLowerCase();
-      if (prev[prev.length - 1]?.toLowerCase() === key) return prev;
-      const next = [...prev, normalized];
-      return next.length > 8 ? next.slice(-8) : next;
-    });
-  }, []);
-
-  const pushAgentEvent = useCallback((event: AgentToolEvent) => {
-    setAgentEvents((prev) => {
-      const next = [...prev];
-      const lastIndex = next.findIndex((item) => item.name === event.name && item.status === 'started' && event.status !== 'started');
-      if (lastIndex >= 0) {
-        next[lastIndex] = { ...next[lastIndex], ...event };
-      } else {
-        next.push(event);
-      }
-      return next.slice(-10);
-    });
-    const refNext = [...agentEventsRef.current];
-    const refIndex = refNext.findIndex((item) => item.name === event.name && item.status === 'started' && event.status !== 'started');
-    if (refIndex >= 0) refNext[refIndex] = { ...refNext[refIndex], ...event };
-    else refNext.push(event);
-    agentEventsRef.current = refNext.slice(-10);
   }, []);
 
   // Load conversations when user logs in
@@ -215,6 +191,34 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const startActivity = useCallback((text: string) => {
+    const lower = text.toLowerCase();
+    let tool: AgentActivityEvent['tool'] = 'think';
+    let title = 'Working';
+    if (lower.includes('search')) { tool = 'search'; title = 'Searching the web'; }
+    else if (lower.includes('read')) { tool = 'read'; title = 'Reading sources'; }
+    else if (lower.includes('run') || lower.includes('execut') || lower.includes('code')) { tool = 'code'; title = 'Running code'; }
+    else if (lower.includes('verif')) { tool = 'verify'; title = 'Verifying results'; }
+    else if (lower.includes('finish') || lower.includes('answer') || lower.includes('write')) { title = 'Writing response'; }
+    else if (lower.includes('plan') || lower.includes('reason')) { title = 'Planning the task'; }
+    setAgentActivity((prev) => {
+      const current = prev.find((x) => x.status === 'running');
+      if (current && current.title === title) return prev;
+      const closed = prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x);
+      return [...closed, { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tool, title, status: 'running', startedAt: Date.now() }];
+    });
+  }, []);
+
+  const finishActivity = useCallback((text?: string, error = false) => {
+    const lower = String(text || '').toLowerCase();
+    const title = lower.includes('search') ? 'Searching the web' : lower.includes('read') ? 'Reading sources' : lower.includes('code') || lower.includes('execut') || lower.includes('run') ? 'Running code' : undefined;
+    setAgentActivity((prev) => {
+      const idx = title ? prev.findIndex((x) => x.status === 'running' && x.title === title) : prev.findIndex((x) => x.status === 'running');
+      if (idx < 0) return prev;
+      return prev.map((x, i) => i === idx ? { ...x, status: error ? 'error' as const : 'done' as const, completedAt: Date.now() } : x);
+    });
+  }, []);
+
   const stopGenerating = () => {
     clearStreamQueue();
     if (abortControllerRef.current) {
@@ -223,9 +227,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setIsStreaming(false);
     setThinkingText(null);
-    setAgentSteps([]);
-    setAgentEvents([]);
-    agentEventsRef.current = [];
+    setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now(), title: 'Stopped' } : x));
   };
 
   // Human-friendly wording for stream-level failures. Never leaks
@@ -267,17 +269,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ]);
   }, []);
 
-  const friendlyAgentStatus = (raw: string | null): string => {
-    if (!raw) return 'Thinking';
-    const t = raw.toLowerCase();
-    if (t.includes('search')) return 'Searching the web';
-    if (t.includes('read')) return 'Reading sources';
-    if (t.includes('run') || t.includes('execut') || t.includes('code')) return 'Executing code';
-    if (t.includes('plan')) return 'Planning';
-    if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer') || t.includes('writ')) return 'Writing response';
-    return 'Thinking';
-  };
-
   const sendMessage = async (text: string) => {
     if (!text.trim() || isStreaming) return;
     setError(null);
@@ -299,11 +290,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearStreamQueue();
     setStreamingContent('');
     streamTextRef.current = '';
-    setThinkingText('Reasoning...');
-    setAgentSteps(['Planning']);
-    setAgentEvents([]);
-    agentEventsRef.current = [];
-    setLastCompletedAgentEvents([]);
+    setThinkingText('Planning the task…');
+    setAgentActivity([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -323,12 +311,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           onThinking: (th) => {
             setThinkingText(th);
-            pushAgentStep(friendlyAgentStatus(th));
+            startActivity(th);
           },
-          onToolEvent: (event) => {
-            pushAgentEvent(event);
-            const label = event.name === 'web_search' ? 'Searching the web' : event.name === 'read_url' ? 'Reading sources' : event.name === 'run_code' ? 'Executing code' : 'Using a tool';
-            pushAgentStep(label);
+          onTool: (toolEvent) => {
+            const map = { web_search: ['search', 'Searching the web'], read_url: ['read', 'Reading sources'], run_code: ['code', 'Running code'] } as const;
+            const resolved = map[toolEvent.tool as keyof typeof map] || ['tool', 'Running the tool'];
+            setAgentActivity((prev) => {
+              const running = prev.find((x) => x.status === 'running' && (x.tool === resolved[0] || x.tool === 'tool'));
+              if (toolEvent.status === 'start') {
+                if (running) return prev;
+                return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tool: resolved[0], title: resolved[1], detail: toolEvent.detail, status: 'running', startedAt: Date.now() }];
+              }
+              if (!running) return prev;
+              return prev.map((x) => x.id === running.id ? { ...x, status: toolEvent.status === 'error' ? 'error' as const : 'done' as const, completedAt: Date.now(), detail: toolEvent.detail || x.detail, sources: toolEvent.sources || x.sources } : x);
+            });
           },
           onChunk: (chunk) => {
             setThinkingText(null);
@@ -345,7 +341,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             setIsStreaming(false);
             setThinkingText(null);
-            setLastCompletedAgentEvents(agentEventsRef.current);
+            setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
             abortControllerRef.current = null;
 
             // Put the completed assistant message into the UI immediately; do not wait for Firestore.
@@ -375,6 +371,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onError: (errMsg) => {
             setIsStreaming(false);
             setThinkingText(null);
+            setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'error' as const, completedAt: Date.now() } : x));
             abortControllerRef.current = null;
             pushErrorBubble(errMsg, streamTextRef.current);
           },
@@ -412,11 +409,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsStreaming(true);
     clearStreamQueue();
     setStreamingContent('');
-    setThinkingText('Regenerating with deep reasoning...');
-    setAgentSteps(['Planning']);
-    setAgentEvents([]);
-    agentEventsRef.current = [];
-    setLastCompletedAgentEvents([]);
+    setThinkingText('Planning the task…');
+    setAgentActivity([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -428,11 +422,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           conversationId: activeConversationId,
         },
         {
-          onThinking: (th) => { setThinkingText(th); pushAgentStep(friendlyAgentStatus(th)); },
-          onToolEvent: (event) => {
-            pushAgentEvent(event);
-            const label = event.name === 'web_search' ? 'Searching the web' : event.name === 'read_url' ? 'Reading sources' : event.name === 'run_code' ? 'Executing code' : 'Using a tool';
-            pushAgentStep(label);
+          onThinking: (th) => { setThinkingText(th); startActivity(th); },
+          onTool: (toolEvent) => {
+            const resolved = toolEvent.tool === 'web_search' ? ['search', 'Searching the web'] : toolEvent.tool === 'read_url' ? ['read', 'Reading sources'] : toolEvent.tool === 'run_code' ? ['code', 'Running code'] : ['tool', 'Running the tool'];
+            setAgentActivity((prev) => {
+              const running = prev.find((x) => x.status === 'running' && (x.tool === resolved[0] || x.tool === 'tool'));
+              if (toolEvent.status === 'start' && !running) return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tool: resolved[0] as any, title: resolved[1], detail: toolEvent.detail, status: 'running', startedAt: Date.now() }];
+              if (!running) return prev;
+              return prev.map((x) => x.id === running.id ? { ...x, status: toolEvent.status === 'error' ? 'error' as const : 'done' as const, completedAt: Date.now(), detail: toolEvent.detail || x.detail, sources: toolEvent.sources || x.sources } : x);
+            });
           },
           onChunk: (chunk) => {
             setThinkingText(null);
@@ -442,7 +440,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             flushStreamBuffer();
             setIsStreaming(false);
             setThinkingText(null);
-            setLastCompletedAgentEvents(agentEventsRef.current);
+            setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
             abortControllerRef.current = null;
             refreshProfile();
             const updated = await apiRequest<ChatMessage[]>(
@@ -530,9 +528,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isStreaming,
         streamingContent,
         thinkingText,
-        agentSteps,
-        agentEvents,
-        lastCompletedAgentEvents,
+        agentActivity,
         error,
         searchQuery,
         filteredConversations,

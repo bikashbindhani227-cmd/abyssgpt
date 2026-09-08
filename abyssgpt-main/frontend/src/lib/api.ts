@@ -77,7 +77,7 @@ export async function apiRequest<T = unknown>(
 export interface StreamChatCallbacks {
   onMeta?: (data: { conversationId: string; userMessage?: ChatMessage; model?: string }) => void;
   onThinking?: (text: string) => void;
-  onToolEvent?: (event: { name: string; status: 'started' | 'completed' | 'failed'; target?: string; preview?: string; sources?: Array<{ title: string; url: string }> }) => void;
+  onTool?: (data: { tool: string; status: 'start' | 'success' | 'error'; detail?: string; sources?: Array<{ title: string; url: string }> }) => void;
   onChunk: (chunk: string) => void;
   onDone: (data: { messageId?: string; conversationId?: string; model?: string }) => void;
   onError: (error: string) => void;
@@ -154,7 +154,7 @@ export async function streamChatApi(
             } else if (data.type === 'thinking') {
               callbacks.onThinking?.(data.text);
             } else if (data.type === 'tool') {
-              callbacks.onToolEvent?.(data);
+              callbacks.onTool?.(data);
             } else if (data.type === 'chunk') {
               callbacks.onChunk(data.text);
             } else if (data.type === 'done') {

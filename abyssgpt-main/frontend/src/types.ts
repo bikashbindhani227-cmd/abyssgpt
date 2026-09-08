@@ -34,14 +34,6 @@ export interface Conversation {
   summary?: string;
 }
 
-export interface AgentToolEvent {
-  name: string;
-  status: 'started' | 'completed' | 'failed';
-  target?: string;
-  preview?: string;
-  sources?: Array<{ title: string; url: string }>;
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';

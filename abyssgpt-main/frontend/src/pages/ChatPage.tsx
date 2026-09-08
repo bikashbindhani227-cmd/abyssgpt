@@ -63,9 +63,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     isStreaming,
     streamingContent,
     thinkingText,
-    agentSteps,
-    agentEvents,
-    lastCompletedAgentEvents,
+    agentActivity,
     isLoadingMessages,
     error,
     clearError,
@@ -156,7 +154,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 }
                 onDelete={msg.isError ? undefined : deleteMessageItem}
                 onToast={onToast}
-                agentEvents={index === messages.length - 1 && msg.role === 'assistant' ? lastCompletedAgentEvents : undefined}
               />
             ))}
 
@@ -167,13 +164,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 </div>
                 <div className="msg-body">
                   <div className="msg-role">AbyssGPT</div>
+                  <AgentActivity items={agentActivity} />
                   {/* Pre-first-token progress states; once content arrives the
                       caret itself signals ongoing generation (calmer, no dupes). */}
-                  <AgentActivity
-                    steps={agentSteps.length ? agentSteps : [friendlyStatus(thinkingText)]}
-                    events={agentEvents}
-                    active
-                  />
+                  {!streamingContent && (
+                    <div className="status-line" role="status" aria-live="polite">
+                      <span className="status-dot" aria-hidden="true" />
+                      <span>{friendlyStatus(thinkingText)}</span>
+                    </div>
+                  )}
                   {streamingContent && (
                     <div className="msg-content streaming-text">
                       <MarkdownContent content={streamingContent} onToast={onToast} />
