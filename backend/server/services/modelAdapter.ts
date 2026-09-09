@@ -132,6 +132,21 @@ function messagesForProtocol(messages: ChatMessagePayload[]): ChatMessagePayload
   });
 }
 
+function isSseKeepalivePayload(payload: string): boolean {
+  const value = payload.trim().toLowerCase();
+  return ['ping', 'pong', 'keepalive', 'keep-alive', 'heartbeat'].includes(value);
+}
+function parseSseData(payload: string): { data?: any; done?: boolean } {
+  const value = payload.trim();
+  if (!value) return {};
+  if (value === '[DONE]') return { done: true };
+  try { return { data: JSON.parse(value) }; }
+  catch {
+    if (isSseKeepalivePayload(value)) return {};
+    throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider emitted malformed SSE JSON before completion', true);
+  }
+}
+
 async function parseStreamingResponse(response: Response, signal?: AbortSignal): Promise<AsyncGenerator<StreamEvent, void, unknown>> {
   if (!response.body) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider returned an empty stream', true);
   const reader = response.body.getReader();
@@ -153,10 +168,10 @@ async function parseStreamingResponse(response: Response, signal?: AbortSignal):
           if (!trimmed || trimmed.startsWith(':')) continue;
           if (!trimmed.startsWith('data:')) continue;
           const payload = trimmed.slice(5).trim();
-          if (!payload) continue;
-          if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }
-          let data: any;
-          try { data = JSON.parse(payload); } catch { throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider emitted malformed SSE JSON before completion', true); }
+          const parsed = parseSseData(payload);
+          if (parsed.done) { sawDone = true; yield { type: 'done', text: fullText }; return; }
+          const data = parsed.data;
+          if (!data) continue;
           if (data?.error) throw new ModelError('provider_error', safeMessage('provider_error'), 'provider emitted a streaming error event', true);
           const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? '';
           if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }
@@ -166,10 +181,13 @@ async function parseStreamingResponse(response: Response, signal?: AbortSignal):
       if (buffer.trim()) {
         const tailLines = buffer.split(/\r?\n/);
         for (const line of tailLines) {
-          const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
-          const payload = trimmed.slice(5).trim(); if (!payload) continue;
-          if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }
-          let data: any; try { data = JSON.parse(payload); } catch { throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider ended with an incomplete SSE event', true); }
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          const parsed = parseSseData(payload);
+          if (parsed.done) { sawDone = true; yield { type: 'done', text: fullText }; return; }
+          const data = parsed.data;
+          if (!data) continue;
           if (data?.error) throw new ModelError('provider_error', safeMessage('provider_error'), 'provider emitted a streaming error event', true);
           const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? '';
           if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }
