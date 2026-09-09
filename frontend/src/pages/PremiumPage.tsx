@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Crown, Check, Send, Zap, ShieldCheck, Clock, Gauge, Brain } from 'lucide-react';
+import { ArrowLeft, Crown, Check, Send } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { apiRequest } from '../lib/api.js';
 import { Skeleton } from '../components/ui.js';
@@ -21,15 +21,18 @@ interface PremiumInfoResponse {
   };
 }
 
-/** Benefit rows are built from live backend limits when available so the
- *  page never contradicts the server's actual tier configuration. */
-const staticBenefits = [
-  { icon: Zap, key: 'queue', text: 'High-reasoning responses with a fast priority queue' },
-  { icon: Brain, key: 'memory', text: 'Unlimited conversation history and long-term memory' },
-];
+/**
+ * Default Telegram contact shown when the backend hasn't returned a configured
+ * username. Mirrors the backend default in configService.ts
+ * (process.env.TELEGRAM_USERNAME || '@MrNewton_2').
+ *
+ * SECURITY: this is the ONLY admin contact surface exposed to the user. No
+ * email address, password, API key, or Firebase credential is ever shown here.
+ */
+const DEFAULT_TELEGRAM_USERNAME = '@MrNewton_2';
 
 export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
-  const { userProfile, firebaseUser, loading: authLoading } = useAuth();
+  const { userProfile, loading: authLoading } = useAuth();
   const [info, setInfo] = useState<PremiumInfoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -41,25 +44,34 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  // userProfile comes from a separate backend call than this page's own
-  // /api/user/premium fetch. Wait for both so the identifier below never
-  // renders blank because the profile call was still in flight.
   const pageLoading = loading || authLoading;
-  const identifierEmail = userProfile?.email || firebaseUser?.email || '';
 
-  const priceInr = info?.priceInr;
-  const telegramUsername = info?.telegramUsername || '@MrNewton_2';
+  // Telegram username — server-configured value with a safe fallback.
+  const telegramUsername = info?.telegramUsername || DEFAULT_TELEGRAM_USERNAME;
   const cleanTelegram = telegramUsername.replace(/^@/, '');
   const telegramUrl = `https://t.me/${cleanTelegram}`;
 
   const isAlreadyPremium = userProfile?.plan === 'premium';
-  const limitBenefits = info
-    ? [
-        { icon: Zap, key: 'daily', text: `${info.limits.dailyMessageLimit} daily messages` },
-        { icon: Gauge, key: 'rate', text: `${info.limits.rateLimitPerMinute} requests per minute` },
-        { icon: Clock, key: 'context', text: `${info.limits.contextLimit}-message context depth for deep reasoning` },
-      ]
-    : [];
+
+  // Single source of truth for the feature list: the backend-configured
+  // premiumBenefits array. This prevents the duplicate-list bug where the
+  // page rendered three separate lists (limitBenefits + staticBenefits +
+  // info.benefits) all describing the same 5 features with different wording.
+  //
+  // When the backend hasn't returned benefits yet, fall back to a clean
+  // minimal list that matches the default configured on the server.
+  const benefits: string[] =
+    info?.benefits && info.benefits.length > 0
+      ? info.benefits.filter(Boolean)
+      : [
+          `${info?.limits.dailyMessageLimit ?? 200} messages per day`,
+          `${info?.limits.rateLimitPerMinute ?? 30} requests per minute`,
+          `${info?.limits.contextLimit ?? 30}-message context window`,
+          'Priority access',
+          'Unlimited conversation history',
+        ];
+
+  const priceInr = info?.priceInr ?? 299;
 
   return (
     <div className="min-h-dvh bg-bg text-ink">
@@ -79,50 +91,41 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl px-4 pb-16 pt-8 sm:px-6">
+      <main className="mx-auto w-full max-w-xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
         {pageLoading ? (
           <div className="card card-pad space-y-4">
             <Skeleton className="skeleton-title" />
             <Skeleton className="skeleton-text" style={{ width: '30%', height: 34 }} />
             <Skeleton className="skeleton-text" style={{ width: '88%' }} />
             <Skeleton className="skeleton-text" style={{ width: '72%' }} />
-            <Skeleton className="skeleton-text" style={{ width: '80%' }} />
           </div>
         ) : (
-          <article className="card card-pad !p-6 sm:!p-9">
-            <div className="mb-6 flex items-center gap-3">
+          <article className="card card-pad !p-5 sm:!p-7">
+            {/* Plan identity + price — compact header */}
+            <div className="mb-5 flex items-center gap-3">
               <div
-                className="grid h-12 w-12 place-items-center rounded-2xl border"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border"
                 style={{
                   background: 'var(--warning-soft)',
                   borderColor: 'color-mix(in srgb, var(--warning) 30%, transparent)',
                   color: 'var(--warning)',
                 }}
               >
-                <Crown className="h-6 w-6" />
+                <Crown className="h-5 w-5" />
               </div>
-              <div>
-                <h2 className="text-lg font-bold tracking-tight">AbyssGPT Pro</h2>
-                <p className="text-xs text-ink-3">Serious capacity for heavy, high-frequency use</p>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-bold tracking-tight sm:text-lg">AbyssGPT Pro</h2>
+                <div className="mt-0.5 flex items-baseline gap-1.5">
+                  <span className="tabular text-2xl font-extrabold tracking-tight sm:text-3xl">₹{priceInr}</span>
+                  <span className="text-[11px] font-medium text-ink-3">/ month</span>
+                </div>
               </div>
             </div>
 
-            {/* Pricing */}
-            <div className="mb-6 flex items-baseline gap-2">
-              {priceInr !== undefined ? (
-                <>
-                  <span className="tabular text-4xl font-extrabold tracking-tight">₹{priceInr}</span>
-                  <span className="text-xs font-medium text-ink-3">/ month</span>
-                </>
-              ) : (
-                <span className="text-sm text-ink-3">Contact us for current pricing</span>
-              )}
-            </div>
-
-            {/* Active status */}
+            {/* Active status — only shown when user already has Pro */}
             {isAlreadyPremium && (
               <div
-                className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-4 text-[13px] font-medium"
+                className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 text-[12.5px] font-medium"
                 style={{
                   background: 'var(--success-soft)',
                   borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)',
@@ -132,11 +135,11 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
               >
                 <span className="flex items-center gap-2">
                   <Check className="h-4 w-4" />
-                  <span>You have an active Pro membership</span>
+                  <span>Active Pro membership</span>
                 </span>
                 {userProfile?.premiumExpiresAt && (
                   <span className="tabular text-[11px] text-ink-3">
-                    Valid until{' '}
+                    Until{' '}
                     {new Date(userProfile.premiumExpiresAt).toLocaleDateString([], {
                       month: 'short',
                       day: 'numeric',
@@ -147,38 +150,35 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
               </div>
             )}
 
-            {/* Benefits */}
-            <div className="mb-8">
-              <h3 className="mb-3 text-[13px] font-bold text-ink-2">
-                Everything in Pro
-              </h3>
-              <ul className="space-y-2.5 text-[13.5px] text-ink-2">
-                {limitBenefits.map(({ icon: Icon, key, text }) => (
-                  <li key={key} className="flex items-start gap-2.5">
-                    <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--warning)' }} />
-                    <span>{text}</span>
-                  </li>
-                ))}
-                {staticBenefits.map(({ icon: Icon, key, text }) => (
-                  <li key={key} className="flex items-start gap-2.5">
-                    <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--warning)' }} />
-                    <span>{text}</span>
-                  </li>
-                ))}
-                {info?.benefits?.filter(Boolean).map((b, i) => (
-                  <li key={`custom-${i}`} className="flex items-start gap-2.5">
-                    <Zap className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--warning)' }} />
-                    <span>{b}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Feature list — single source of truth, each feature appears ONCE */}
+            <ul className="mb-6 space-y-2.5 text-[13.5px] text-ink-2">
+              {benefits.map((benefit, i) => (
+                <li key={`benefit-${i}`} className="flex items-start gap-2.5">
+                  <Check
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    style={{ color: 'var(--success)' }}
+                    aria-hidden="true"
+                  />
+                  <span className="leading-snug">{benefit}</span>
+                </li>
+              ))}
+            </ul>
 
-            {/* Activation flow (existing Telegram process) */}
+            {/* Clean Telegram contact section — no email, no marketing filler */}
             <div className="space-y-3 rounded-2xl border border-line bg-surface-2 p-4">
-              <div className="text-[13px] leading-relaxed text-ink-2">
-                To activate or renew Pro, contact our admin on Telegram with your registered email address (
-                <strong className="text-ink">{identifierEmail}</strong>). Activation is applied promptly.
+              <div>
+                <p className="text-[13px] font-semibold text-ink">Need Pro?</p>
+                <p className="mt-0.5 text-[12.5px] text-ink-2">
+                  Contact admin on Telegram to activate.
+                </p>
+              </div>
+
+              <div
+                className="flex items-center gap-2 rounded-xl border border-line bg-bg px-3 py-2.5"
+                aria-label={`Telegram admin contact: ${telegramUsername}`}
+              >
+                <Send className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} aria-hidden="true" />
+                <span className="font-mono text-[13px] font-semibold text-ink select-all">{telegramUsername}</span>
               </div>
 
               <a
@@ -188,24 +188,19 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
                 rel="noopener noreferrer"
                 className="btn btn-block"
                 style={{
-                  background: 'linear-gradient(135deg, var(--warning), color-mix(in srgb, var(--warning) 78%, #000))',
-                  color: '#191920',
+                  background: 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000))',
+                  color: 'var(--accent-ink)',
                   height: 44,
                   fontSize: 13.5,
                 }}
               >
                 <Send className="h-4 w-4" />
-                <span>Contact {telegramUsername} on Telegram</span>
+                <span>Contact on Telegram</span>
               </a>
-
-              <p className="flex items-center justify-center gap-1.5 text-[11px] text-ink-3">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Access is verified and provisioned manually for security.</span>
-              </p>
             </div>
 
             {loadError && !info && (
-              <p className="mt-4 text-center text-xs text-ink-3">
+              <p className="mt-4 text-center text-[11px] text-ink-3">
                 Showing default contact details — some plan information could not be loaded.
               </p>
             )}
