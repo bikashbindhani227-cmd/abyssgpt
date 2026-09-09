@@ -1,11 +1,10 @@
 import React, { useRef, useEffect } from 'react';
-import { BarChart3, Code2, Globe, PenLine, Sparkles, Telescope } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { ChatMessageItem } from '../components/ChatMessageItem.js';
 import { ChatComposer } from '../components/ChatComposer.js';
 import { MarkdownContent } from '../components/MarkdownContent.js';
-import { AbyssLogo } from '../components/AbyssLogo.js';
 import { ChatSkeleton } from '../components/ui.js';
 import { AgentActivity } from '../components/AgentActivity.js';
 import { TodoPanel } from '../components/TodoPanel.js';
@@ -27,36 +26,6 @@ function friendlyStatus(raw: string | null): string {
   if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer')) return 'Writing response';
   return 'Thinking';
 }
-
-/** Curated starting points — each one sends a real message through the
- *  normal chat pipeline; nothing here is decorative. */
-const EXAMPLE_PROMPTS: Array<{ icon: React.ComponentType<{ size?: number }>; label: string; prompt: string }> = [
-  {
-    icon: Telescope,
-    label: 'Research',
-    prompt: 'Research the current state of solid-state batteries and summarize the key challenges',
-  },
-  {
-    icon: Code2,
-    label: 'Coding',
-    prompt: 'Write a type-safe useDebounce hook for React with proper cleanup on unmount',
-  },
-  {
-    icon: PenLine,
-    label: 'Writing',
-    prompt: 'Draft a friendly launch announcement for a small productivity app',
-  },
-  {
-    icon: Globe,
-    label: 'Latest',
-    prompt: "What are this week's most important developments in AI?",
-  },
-  {
-    icon: BarChart3,
-    label: 'Analysis',
-    prompt: 'Compare Postgres and MongoDB for a high-write analytics workload',
-  },
-];
 
 export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) => {
   const {
@@ -112,40 +81,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   const dailyLimit = limits?.dailyLimit ?? 20;
   const isLimitReached = dailyUsed >= dailyLimit && userProfile?.plan !== 'premium';
 
-  const isEmpty = messages.length === 0 && !isStreaming && !isLoadingMessages;
-
   return (
     <>
       <section className="chat" id="chat" ref={chatRef} aria-label="Conversation">
         {isLoadingMessages && <ChatSkeleton />}
 
-        {!isLoadingMessages && isEmpty && (
-          <div className="empty" id="empty">
-            <div className="empty-brand">
-              <AbyssLogo size={24} />
-            </div>
-            <h1 className="empty-title">What will you explore today?</h1>
-            <p className="empty-sub">Ask anything — AbyssGPT researches, writes, codes, and reasons with you.</p>
-            <div className="prompt-grid">
-              {EXAMPLE_PROMPTS.map(({ icon: Icon, label, prompt }) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="prompt-card"
-                  onClick={() => sendMessage(prompt)}
-                >
-                  <span className="prompt-head">
-                    <Icon size={14} />
-                    <span>{label}</span>
-                  </span>
-                  <span className="prompt-text">{prompt}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!isEmpty && (
+        {!isLoadingMessages && (
           <div className="chat-inner" id="chatInner">
             {messages.map((msg, index) => (
               <ChatMessageItem
