@@ -1,0 +1,103 @@
+name: production-long-generation-repair
+on:
+  push:
+    branches: [fix/long-fullstack-generation]
+permissions:
+  contents: write
+jobs:
+  repair-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Restore production sources from main
+        run: git checkout origin/main -- backend/server/services/agentBudget.ts backend/server/services/agentOrchestrator.ts backend/server/services/modelAdapter.ts backend/server/services/aiCredits.ts backend/server/routes/chat.ts frontend/src/lib/api.ts
+      - name: Apply focused production fixes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def edit(path, fn):
+              p=Path(path); s=p.read_text(); n=fn(s); assert n != s, f'no change made to {path}'; p.write_text(n)
+
+          def budget(s):
+              old="const CODING_RE = /\\b(debug|stack ?trace|traceback|exception|error message|fix (?:this|my|the) (?:code|bug|error|function|script)|run (?:this|my|the) (?:code|script|program)|execute|compile|unit ?test|code review|refactor|optimi[sz]e (?:this|my|the) (?:code|query|function)|syntax error|typeerror|referenceerror|nullpointer|segfault|why (?:is|does) my (?:code|script|program))\\b/i;"
+              new=old+"\n\nconst PROJECT_GENERATION_RE = /(?:\\b(?:build|create|generate|develop|make)\\b[\\s\\S]{0,160}\\b(?:complete|entire|full[- ]stack|production[- ]ready|whole|all required|source code|project|application|app|website|files)\\b|\\bfull[- ]stack\\b|\\bentire project\\b|\\ball required files\\b|\\bcomplete source code\\b|\\bgenerate the (?:entire|complete|whole) (?:project|application|app|website|source code)\\b|\\bproduction[- ]ready (?:full[- ]stack|application|app|website|project)\\b)/i;"
+              s=s.replace(old,new)
+              old2="""  if (CODING_RE.test(text)) {
+    needsCodeExecution = true;
+    signals.push('coding_or_debug');
+    complexity += 2;
+  }"""
+              new2="""  const isProjectGeneration = PROJECT_GENERATION_RE.test(text);
+  if (isProjectGeneration || CODING_RE.test(text)) {
+    needsCodeExecution = true;
+    signals.push(isProjectGeneration ? 'full_project_generation' : 'coding_or_debug');
+    complexity += isProjectGeneration ? 4 : 2;
+  }"""
+              s=s.replace(old2,new2)
+              s=s.replace("} else if (needsCodeExecution && (CODING_RE.test(text) || hasFence)) {", "} else if (needsCodeExecution && (PROJECT_GENERATION_RE.test(text) || CODING_RE.test(text) || hasFence)) {")
+              return s
+          edit('backend/server/services/agentBudget.ts', budget)
+
+          def orchestrator(s):
+              start=s.index('async function executeToolRound('); end=s.index('\n\n/**\n * Run the full agentic loop.', start)
+              new='''async function executeToolRound(\n  calls: NormalizedToolCall[], executeTool: AgentToolExecutor, tracker: BudgetTracker, signal?: AbortSignal,\n): Promise<ToolRoundOutcome> {\n  const results: ToolRoundResult[] = []; const seenFingerprints = new Set<string>(); const executable: NormalizedToolCall[] = [];\n  for (const call of calls) {\n    const fp = `${call.name}:${JSON.stringify(call.args)}`;\n    if (seenFingerprints.has(fp)) { results.push({ id: call.id, content: 'Duplicate tool call dropped this round.' }); continue; }\n    seenFingerprints.add(fp);\n    if (executable.length >= MAX_CALLS_PER_ROUND) { results.push({ id: call.id, content: 'Skipped: too many parallel tool calls requested this round.' }); continue; }\n    executable.push(call);\n  }\n  let accounted = 0;\n  await Promise.all(executable.map(async (call) => {\n    const validation = validateToolArguments(call.name, call.args);\n    if (!validation.ok) { tracker.recordToolCall(call.name, call.args, false, validation.reason || 'invalid arguments', 0); accounted += 1; results.push({ id: call.id, content: `Tool call rejected: ${validation.reason}` }); return; }\n    const before = tracker.toolCallsUsedCount;\n    try {\n      const output = await executeTool(call.name, validation.value as Record<string, unknown>, signal);\n      const after = tracker.toolCallsUsedCount; if (after > before) accounted += after - before;\n      results.push({ id: call.id, content: fenceToolOutput(call.name, output) });\n    } catch (error) {\n      const message = error instanceof Error ? error.message : String(error); const after = tracker.toolCallsUsedCount;\n      if (after === before) { tracker.recordToolCall(call.name, validation.value as Record<string, unknown>, false, `Tool failed: ${message}`, 0); accounted += 1; } else accounted += after - before;\n      results.push({ id: call.id, content: `Tool failed: ${message}` });\n    }\n  }));\n  const order = new Map(calls.map((c, i) => [c.id, i])); results.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));\n  return { results, accounted };\n}'''
+              return s[:start]+new+s[end:]
+          edit('backend/server/services/agentOrchestrator.ts', orchestrator)
+
+          def adapter(s):
+              start=s.index('  async function* streamCompletion('); end=s.index('\n\n  return {', start)
+              new='''  async function* streamCompletion(messages: ChatMessagePayload[], options: { signal?: AbortSignal } = {}): AsyncGenerator<StreamEvent, void, unknown> {\n    let response: Response;\n    try { response = await requestWithCapabilityFallback(config, (remove) => { const b: Record<string, unknown> = { model: config.modelId, messages: messagesForProtocol(messages), stream: true }; if (remove.toolChoice) b.tool_choice = 'none'; return b; }, options.signal); }\n    catch (error) { throw toModelError(error, options.signal); }\n    if (!response.ok) { const rawText = await response.text().catch(() => ''); throw new ModelError('provider_error', safeMessage('provider_error'), `provider HTTP ${response.status}: ${rawText.slice(0, 500)}`, response.status >= 500 || response.status === 429); }\n    if (!response.body) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider returned an empty stream', true);\n    const reader = response.body.getReader(); const decoder = new TextDecoder('utf-8'); let buffer = ''; let fullText = ''; let sawDone = false;\n    try {\n      while (true) {\n        if (options.signal?.aborted) { await reader.cancel().catch(() => {}); return; }\n        const { done, value } = await reader.read(); if (done) break;\n        buffer += decoder.decode(value, { stream: true }); const lines = buffer.split(/\\r?\\n/); buffer = lines.pop() || '';\n        for (const line of lines) {\n          const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;\n          const payload = trimmed.slice(5).trim(); if (!payload) continue;\n          if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }\n          let data: any; try { data = JSON.parse(payload); } catch { throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider emitted malformed SSE JSON before completion', true); }\n          if (data?.error) throw new ModelError('provider_error', safeMessage('provider_error'), 'provider emitted a streaming error event', true);\n          const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? '';\n          if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }\n        }\n      }\n      buffer += decoder.decode();\n      for (const line of buffer.split(/\\r?\\n/)) {\n        const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;\n        const payload = trimmed.slice(5).trim(); if (!payload) continue;\n        if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }\n        let data: any; try { data = JSON.parse(payload); } catch { throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider ended with an incomplete SSE event', true); }\n        if (data?.error) throw new ModelError('provider_error', safeMessage('provider_error'), 'provider emitted a streaming error event', true);\n        const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? '';\n        if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }\n      }\n      if (!sawDone) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider stream ended before [DONE]', true);\n    } finally { reader.releaseLock(); }\n  }'''
+              return s[:start]+new+s[end:]
+          edit('backend/server/services/modelAdapter.ts', adapter)
+
+          def credits(s):
+              start=s.index('async function* streamFinalCompletion('); end=s.index('\n\n/** Non-blocking budget status line', start)
+              new='''async function* streamFinalCompletion(messages: ChatMessagePayload[], signal?: AbortSignal): AsyncGenerator<StreamEvent, void, unknown> {\n  const response = await requestAICredits({ model: MODEL_ID, messages, stream: true }, signal);\n  if (!response.ok) { const raw = await response.text().catch(() => ''); throw new Error(`AI Credits API returned ${response.status}: ${raw.slice(0, 700)}`); }\n  if (!response.body) throw new Error('AI Credits API returned an empty stream.');\n  const reader = response.body.getReader(); const decoder = new TextDecoder('utf-8'); let buffer = ''; let fullText = ''; let sawDone = false;\n  try {\n    while (true) {\n      if (signal?.aborted) { await reader.cancel().catch(() => {}); return; }\n      const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true });\n      const lines = buffer.split(/\\r?\\n/); buffer = lines.pop() || '';\n      for (const line of lines) {\n        const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;\n        const payload = trimmed.slice(5).trim(); if (!payload) continue;\n        if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }\n        let data: any; try { data = JSON.parse(payload); } catch { throw new Error('AI Credits returned malformed streaming data.'); }\n        if (data?.error) throw new Error('AI Credits returned a streaming error.');\n        const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? ''; if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }\n      }\n    }\n    buffer += decoder.decode();\n    for (const line of buffer.split(/\\r?\\n/)) {\n      const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;\n      const payload = trimmed.slice(5).trim(); if (!payload) continue;\n      if (payload === '[DONE]') { sawDone = true; yield { type: 'done', text: fullText }; return; }\n      let data: any; try { data = JSON.parse(payload); } catch { throw new Error('AI Credits ended with an incomplete SSE event.'); }\n      if (data?.error) throw new Error('AI Credits returned a streaming error.');\n      const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.message?.content ?? ''; if (typeof delta === 'string' && delta) { fullText += delta; yield { type: 'chunk', text: delta }; }\n    }\n    if (!sawDone) throw new Error('AI Credits stream ended before [DONE]; response is incomplete.');\n  } finally { reader.releaseLock(); }\n}'''
+              return s[:start]+new+s[end:]
+          edit('backend/server/services/aiCredits.ts', credits)
+
+          def chat(s):
+              s=s.replace('const totalTimeoutMs = budgetPlan.budget.TOTAL_AGENT_TIMEOUT_MS + 5000;', 'const totalTimeoutMs = budgetPlan.budget.TOTAL_AGENT_TIMEOUT_MS;')
+              old="""    if (!accumulatedText.trim() && !abortController.signal.aborted) {
+      accumulatedText = 'The AI returned an empty response. Please try again.';
+      writeSse(res, { type: 'chunk', text: accumulatedText });
+    }
+
+    return { text: accumulatedText, modelUsed };"""
+              new="""    if (!accumulatedText.trim() && !abortController.signal.aborted) {
+      throw new ModelError('invalid_response', 'The AI returned an empty response. Please retry.', 'stream completed without assistant content', true);
+    }
+
+    return { text: accumulatedText, modelUsed };"""
+              assert old in s
+              return s.replace(old,new)
+          edit('backend/server/routes/chat.ts', chat)
+          PY
+      - name: Install dependencies
+        run: |
+          npm install --prefix backend
+          npm install --prefix frontend
+      - name: Diff check
+        run: git diff --check
+      - name: Backend tests
+        run: npm test
+      - name: Frontend typecheck
+        run: npm --prefix frontend run lint
+      - name: Full build
+        run: npm run build
+      - name: Commit only verified source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/production-long-generation-repair.yml
+          git add backend/server/services/agentBudget.ts backend/server/services/agentOrchestrator.ts backend/server/services/modelAdapter.ts backend/server/services/aiCredits.ts backend/server/routes/chat.ts backend/tests/longGeneration.test.ts package.json .github/workflows/production-long-generation-repair.yml
+          git diff --cached --check
+          git commit -m "Fix long full-stack generation and stream integrity"
+          git push origin fix/long-fullstack-generation
