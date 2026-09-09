@@ -69,6 +69,35 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'todo_write',
+      description: 'Maintain a visible task list during multi-step work. Call this when starting a non-trivial task that has 2+ steps, when the plan changes, or when a step completes. The user sees a compact progress panel — keep titles short and actionable. Do not call this for trivial single-step answers.',
+      parameters: {
+        type: 'object',
+        properties: {
+          merge: { type: 'boolean', description: 'When true, update matching IDs without dropping the others. When false, replace the entire list. Use merge to mark progress on existing items.' },
+          todos: {
+            type: 'array',
+            description: 'The full todo list (when merge=false) or partial updates (when merge=true).',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Stable identifier for this todo. Reuse the same id to update it.' },
+                content: { type: 'string', description: 'Short imperative description, e.g. "Search for latest prices".' },
+                status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'], description: 'Current status. Mark exactly one as in_progress at a time.' },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['todos'],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 /** Known tool names (drives validation + honest "unknown tool" handling). */
@@ -159,6 +188,29 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       return { ok: false, reason: `Code too long (max ${TOOL_ARGUMENT_LIMITS.MAX_CODE_LENGTH} characters).` };
     }
     return { ok: true, value: { code, language: normalizeLanguage(args?.language) } };
+  }
+
+  if (name === 'todo_write') {
+    const rawTodos = args?.todos;
+    if (!Array.isArray(rawTodos) || rawTodos.length === 0) {
+      return { ok: false, reason: 'todo_write requires a non-empty "todos" array.' };
+    }
+    if (rawTodos.length > 30) {
+      return { ok: false, reason: 'Too many todos (max 30).' };
+    }
+    const cleaned: Array<{ id: string; content?: string; status?: string }> = [];
+    for (const raw of rawTodos) {
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as Record<string, unknown>;
+      const id = String(r.id ?? '').trim().slice(0, 64);
+      if (!id) continue; // skip items without an id
+      const content = r.content !== undefined ? String(r.content).slice(0, 280) : undefined;
+      const status = r.status !== undefined ? String(r.status) : undefined;
+      cleaned.push({ id, content, status });
+    }
+    if (!cleaned.length) return { ok: false, reason: 'No valid todos provided.' };
+    const merge = Boolean(args?.merge);
+    return { ok: true, value: { todos: cleaned, merge } };
   }
 
   return { ok: false, reason: `Unknown tool: ${name}` };

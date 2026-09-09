@@ -263,6 +263,68 @@ adminRouter.patch('/system-prompt', async (req: AuthenticatedRequest, res: Respo
   }
 });
 
+// PUT alias for clients that send PUT instead of PATCH (frontend compatibility)
+adminRouter.put('/system-prompt', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { systemPrompt } = req.body;
+    if (!systemPrompt || typeof systemPrompt !== 'string') {
+      res.status(400).json({ error: 'Valid systemPrompt string is required' });
+      return;
+    }
+    const updated = await updateSystemPrompt(systemPrompt, req.user!.email || req.user!.uid);
+    res.json(updated);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to update system prompt';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Reset system prompt to the default configured via DEFAULT_SYSTEM_PROMPT env var.
+adminRouter.post('/system-prompt/reset', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const defaultPrompt = String(process.env.DEFAULT_SYSTEM_PROMPT || '').trim();
+    if (!defaultPrompt) {
+      res.status(503).json({ error: 'No default system prompt is configured on the backend.' });
+      return;
+    }
+    const updated = await updateSystemPrompt(defaultPrompt, req.user!.email || req.user!.uid);
+    res.json(updated);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to reset system prompt';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Test a candidate system prompt against a fixed sanity message. Returns the
+// model's response so admins can preview behaviour without saving the change.
+adminRouter.post('/system-prompt/test', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { systemPrompt, testMessage } = req.body;
+    if (!systemPrompt || typeof systemPrompt !== 'string') {
+      res.status(400).json({ error: 'A candidate systemPrompt string is required.' });
+      return;
+    }
+    const message = typeof testMessage === 'string' && testMessage.trim()
+      ? testMessage.trim().slice(0, 1000)
+      : 'Reply with a single short sentence confirming you understood the system prompt.';
+    // Use the model adapter directly so this works for any configured MODEL_ID.
+    const { createModelAdapter } = await import('../services/modelAdapter.js');
+    const adapter = createModelAdapter();
+    const response = await adapter.generateCompletion([
+      { role: 'system', content: systemPrompt.slice(0, 8000) },
+      { role: 'user', content: message },
+    ]);
+    res.json({
+      response: response.text || '(empty response)',
+      toolCalls: response.toolCalls.length,
+      finishReason: response.finishReason,
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to test system prompt';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 // Limits config
 adminRouter.get('/limits', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -284,6 +346,17 @@ adminRouter.patch('/limits', async (req: AuthenticatedRequest, res: Response): P
   }
 });
 
+// PUT alias for clients that send PUT instead of PATCH (frontend compatibility)
+adminRouter.put('/limits', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const updated = await updateAppLimitsConfig(req.body, req.user!.email || req.user!.uid);
+    res.json(updated);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to update limits';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 // App settings
 adminRouter.get('/settings', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -296,6 +369,17 @@ adminRouter.get('/settings', async (req: AuthenticatedRequest, res: Response): P
 });
 
 adminRouter.patch('/settings', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const updated = await updateAppSettingsConfig(req.body, req.user!.email || req.user!.uid);
+    res.json(updated);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to update settings';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// PUT alias for clients that send PUT instead of PATCH (frontend compatibility)
+adminRouter.put('/settings', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const updated = await updateAppSettingsConfig(req.body, req.user!.email || req.user!.uid);
     res.json(updated);

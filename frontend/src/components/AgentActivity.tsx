@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, CheckCircle2, Circle, Search, BookOpen, Code2, Sparkles, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
+import { ToolBlock } from './ToolBlock.js';
+import { AgentWorkHeader } from './AgentWorkHeader.js';
+import { SourcesDialog, type SourceEntry } from './SourcesDialog.js';
 
 export interface AgentSource {
   title: string;
@@ -15,6 +18,21 @@ export interface AgentActivityItem {
   sources?: AgentSource[];
   startedAt: number;
   completedAt?: number;
+}
+
+function toolNameFor(item: AgentActivityItem): string {
+  switch (item.tool) {
+    case 'search': return 'web_search';
+    case 'read': return 'read_url';
+    case 'code': return 'run_code';
+    default: return '';
+  }
+}
+
+function targetFor(item: AgentActivityItem): string | undefined {
+  if (!item.detail) return undefined;
+  // For search, detail is the query; for read, the URL; for code, the language.
+  return item.detail;
 }
 
 function iconFor(tool: AgentActivityItem['tool'], status: AgentActivityItem['status']) {
@@ -36,20 +54,68 @@ function elapsed(item: AgentActivityItem) {
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
 }
 
-export const AgentActivity: React.FC<{ items: AgentActivityItem[]; compact?: boolean }> = ({ items, compact = false }) => {
+export const AgentActivity: React.FC<{
+  items: AgentActivityItem[];
+  compact?: boolean;
+  isStreaming?: boolean;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+}> = ({ items, compact = false, isStreaming = false, startedAt, finishedAt }) => {
   const [open, setOpen] = useState(false);
+  const [sourcesDialogOpen, setSourcesDialogOpen] = useState(false);
+
+  const allSources = useMemo<SourceEntry[]>(() => {
+    const collected: SourceEntry[] = [];
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (!item.sources) continue;
+      for (const src of item.sources) {
+        if (!src.url || seen.has(src.url)) continue;
+        seen.add(src.url);
+        collected.push({ title: src.title, url: src.url });
+      }
+    }
+    return collected;
+  }, [items]);
+
   const active = useMemo(() => items.find((item) => item.status === 'running') ?? items[items.length - 1], [items]);
   if (!items.length) return null;
-  const hasSources = items.some((item) => (item.sources?.length ?? 0) > 0);
+  const hasSources = allSources.length > 0;
+
+  const durationMs = startedAt && finishedAt ? finishedAt - startedAt : undefined;
+  const isTiming = isStreaming && startedAt !== null && finishedAt === null;
 
   return (
     <div className={`agent-activity ${compact ? 'compact' : ''}`} data-open={open ? 'true' : 'false'}>
-      <button type="button" className="agent-activity-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="agent-activity-icon">{active ? iconFor(active.tool, active.status) : <Sparkles size={15} />}</span>
-        <span className="agent-activity-title">{active?.title || 'Working'}</span>
-        {active?.detail && <span className="agent-activity-detail">{active.detail}</span>}
-        <ChevronDown size={15} className="agent-activity-chevron" aria-hidden="true" />
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <AgentWorkHeader
+          startedAt={startedAt ?? undefined}
+          durationMs={durationMs}
+          isTiming={isTiming}
+          expanded={open}
+          onToggle={() => setOpen((v) => !v)}
+          canToggle={items.length > 0}
+        />
+        {active && (
+          <ToolBlock
+            tool={toolNameFor(active) || 'tool'}
+            status={active.status === 'running' ? 'running' : active.status === 'error' ? 'error' : 'done'}
+            target={targetFor(active)}
+          />
+        )}
+        {hasSources && (
+          <button
+            type="button"
+            className="composer-toolbar-btn"
+            onClick={() => setSourcesDialogOpen(true)}
+            style={{ width: 'auto', padding: '0 10px', height: 26, borderRadius: 11, fontSize: 11.5, color: 'var(--text-2)' }}
+            aria-label={`View all ${allSources.length} citations`}
+          >
+            <ExternalLink size={12} />
+            {allSources.length} source{allSources.length === 1 ? '' : 's'}
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className="agent-activity-body">
@@ -84,6 +150,12 @@ export const AgentActivity: React.FC<{ items: AgentActivityItem[]; compact?: boo
           {hasSources && <div className="agent-activity-footer">Sources were gathered by the agent and may contain errors.</div>}
         </div>
       )}
+
+      <SourcesDialog
+        open={sourcesDialogOpen}
+        sources={allSources}
+        onClose={() => setSourcesDialogOpen(false)}
+      />
     </div>
   );
 };

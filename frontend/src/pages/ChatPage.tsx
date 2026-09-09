@@ -8,6 +8,7 @@ import { MarkdownContent } from '../components/MarkdownContent.js';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 import { ChatSkeleton } from '../components/ui.js';
 import { AgentActivity } from '../components/AgentActivity.js';
+import { TodoPanel } from '../components/TodoPanel.js';
 
 interface ChatPageProps {
   onOpenSettings: () => void;
@@ -64,6 +65,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     streamingContent,
     thinkingText,
     agentActivity,
+    agentStartedAt,
+    agentFinishedAt,
+    activeTodos,
+    activeAttachments,
     isLoadingMessages,
     error,
     clearError,
@@ -164,7 +169,29 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 </div>
                 <div className="msg-body">
                   <div className="msg-role">AbyssGPT</div>
-                  <AgentActivity items={agentActivity} />
+                  {activeAttachments.length > 0 && (
+                    <div className="composer-attachments" style={{ padding: 0, marginBottom: 6 }}>
+                      {activeAttachments.map((att, idx) => (
+                        <div
+                          key={`${att.filename}-${idx}`}
+                          className={`attachment-chip${att.rejected ? ' attachment-rejected' : ''}`}
+                          title={att.rejected ? att.rejectionReason : att.filename}
+                        >
+                          <span className="attachment-icon">
+                            {att.rejected || !att.hasTextContent ? '⚠' : '📄'}
+                          </span>
+                          <span className="attachment-name">{att.filename}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {activeTodos.length > 0 && <TodoPanel todos={activeTodos} />}
+                  <AgentActivity
+                    items={agentActivity}
+                    isStreaming={isStreaming}
+                    startedAt={agentStartedAt}
+                    finishedAt={agentFinishedAt}
+                  />
                   {/* Pre-first-token progress states; once content arrives the
                       caret itself signals ongoing generation (calmer, no dupes). */}
                   {!streamingContent && (
@@ -199,7 +226,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
       </section>
 
       <ChatComposer
-        onSend={(text) => sendMessage(text)}
+        onSend={(text, attachments) => sendMessage(text, attachments)}
         onStop={stopGenerating}
         isStreaming={isStreaming}
         disabled={isLimitReached}

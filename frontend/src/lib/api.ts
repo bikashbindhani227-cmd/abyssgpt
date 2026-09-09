@@ -74,17 +74,40 @@ export async function apiRequest<T = unknown>(
   return (await response.json()) as T;
 }
 
+export interface StreamAttachmentMeta {
+  filename: string;
+  mimeType: string;
+  size: number;
+  rejected?: boolean;
+  rejectionReason?: string;
+  hasTextContent: boolean;
+}
+
+export interface StreamTodo {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+}
+
 export interface StreamChatCallbacks {
   onMeta?: (data: { conversationId: string; userMessage?: ChatMessage; model?: string }) => void;
   onThinking?: (text: string) => void;
   onTool?: (data: { tool: string; status: 'start' | 'success' | 'error'; detail?: string; sources?: Array<{ title: string; url: string }> }) => void;
+  onTodo?: (todos: StreamTodo[]) => void;
+  onAttachments?: (attachments: StreamAttachmentMeta[]) => void;
   onChunk: (chunk: string) => void;
   onDone: (data: { messageId?: string; conversationId?: string; model?: string }) => void;
   onError: (error: string) => void;
 }
 
+export interface StreamChatPayload {
+  message: string;
+  conversationId?: string;
+  attachments?: Array<{ filename: string; mimeType: string; content: string }>;
+}
+
 export async function streamChatApi(
-  payload: { message: string; conversationId?: string },
+  payload: StreamChatPayload,
   callbacks: StreamChatCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
@@ -155,6 +178,10 @@ export async function streamChatApi(
               callbacks.onThinking?.(data.text);
             } else if (data.type === 'tool') {
               callbacks.onTool?.(data);
+            } else if (data.type === 'todo') {
+              callbacks.onTodo?.(Array.isArray(data.todos) ? data.todos : []);
+            } else if (data.type === 'attachments') {
+              callbacks.onAttachments?.(Array.isArray(data.attachments) ? data.attachments : []);
             } else if (data.type === 'chunk') {
               callbacks.onChunk(data.text);
             } else if (data.type === 'done') {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { apiRequest, streamChatApi } from '../lib/api.js';
+import { apiRequest, streamChatApi, type StreamTodo, type StreamAttachmentMeta } from '../lib/api.js';
 import { useAuth } from './AuthContext.js';
 import type { Conversation, ChatMessage } from '../types.js';
 
@@ -14,6 +14,17 @@ export interface AgentActivityEvent {
   completedAt?: number;
 }
 
+export interface PendingAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded text content for text files; null for binary files. */
+  content: string | null;
+  size: number;
+}
+
+export interface ActiveAttachmentMeta extends StreamAttachmentMeta {}
+
 interface ChatContextType {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -25,19 +36,27 @@ interface ChatContextType {
   streamingContent: string;
   thinkingText: string | null;
   agentActivity: AgentActivityEvent[];
+  agentStartedAt: number | null;
+  agentFinishedAt: number | null;
+  activeTodos: StreamTodo[];
+  pendingAttachments: PendingAttachment[];
+  activeAttachments: ActiveAttachmentMeta[];
   error: string | null;
   searchQuery: string;
   filteredConversations: Conversation[];
   setSearchQuery: (q: string) => void;
   selectConversation: (id: string | null) => void;
   createNewChat: () => Promise<string>;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, attachments?: PendingAttachment[]) => Promise<void>;
   stopGenerating: () => void;
   regenerateMessage: () => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   deleteMessageItem: (messageId: string) => Promise<void>;
   clearError: () => void;
+  addAttachment: (att: PendingAttachment) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -54,6 +73,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingText, setThinkingText] = useState<string | null>(null);
   const [agentActivity, setAgentActivity] = useState<AgentActivityEvent[]>([]);
+  const [agentStartedAt, setAgentStartedAt] = useState<number | null>(null);
+  const [agentFinishedAt, setAgentFinishedAt] = useState<number | null>(null);
+  const [activeTodos, setActiveTodos] = useState<StreamTodo[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [activeAttachments, setActiveAttachments] = useState<ActiveAttachmentMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -228,6 +252,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsStreaming(false);
     setThinkingText(null);
     setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now(), title: 'Stopped' } : x));
+    setAgentFinishedAt(Date.now());
   };
 
   // Human-friendly wording for stream-level failures. Never leaks
@@ -269,7 +294,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ]);
   }, []);
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, attachments?: PendingAttachment[]) => {
     if (!text.trim() || isStreaming) return;
     setError(null);
 
@@ -292,16 +317,41 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     streamTextRef.current = '';
     setThinkingText('Planning the task…');
     setAgentActivity([]);
+    setAgentStartedAt(Date.now());
+    setAgentFinishedAt(null);
+    setActiveTodos([]);
+    setActiveAttachments([]);
+    if (attachments && attachments.length > 0) {
+      setActiveAttachments(
+        attachments.map((a) => ({
+          filename: a.filename,
+          mimeType: a.mimeType,
+          size: a.size,
+          hasTextContent: a.content !== null,
+        })),
+      );
+    }
+    // Clear pending attachments from the composer now that they've been sent.
+    setPendingAttachments([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    // Build the request payload — include attachments only when at least one
+    // was provided with non-null content.
+    const payload: { message: string; conversationId?: string; attachments?: Array<{ filename: string; mimeType: string; content: string }> } = {
+      message: cleanText,
+      conversationId: currentConvId || undefined,
+    };
+    if (attachments && attachments.length > 0) {
+      payload.attachments = attachments
+        .filter((a) => a.content !== null)
+        .map((a) => ({ filename: a.filename, mimeType: a.mimeType, content: a.content as string }));
+    }
+
     try {
       await streamChatApi(
-        {
-          message: cleanText,
-          conversationId: currentConvId || undefined,
-        },
+        payload,
         {
           onMeta: (meta) => {
             if (meta.conversationId && meta.conversationId !== currentConvId) {
@@ -326,6 +376,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return prev.map((x) => x.id === running.id ? { ...x, status: toolEvent.status === 'error' ? 'error' as const : 'done' as const, completedAt: Date.now(), detail: toolEvent.detail || x.detail, sources: toolEvent.sources || x.sources } : x);
             });
           },
+          onTodo: (todos) => {
+            setActiveTodos(todos);
+          },
+          onAttachments: (atts) => {
+            setActiveAttachments(atts);
+          },
           onChunk: (chunk) => {
             setThinkingText(null);
             queueStreamChunk(chunk);
@@ -342,6 +398,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsStreaming(false);
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
+            setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
 
             // Put the completed assistant message into the UI immediately; do not wait for Firestore.
@@ -372,6 +429,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsStreaming(false);
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'error' as const, completedAt: Date.now() } : x));
+            setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
             pushErrorBubble(errMsg, streamTextRef.current);
           },
@@ -382,6 +440,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearStreamQueue();
       setIsStreaming(false);
       setThinkingText(null);
+      setAgentFinishedAt(Date.now());
       abortControllerRef.current = null;
       pushErrorBubble(
         err instanceof Error ? err.message : 'Message failed to send.',
@@ -411,6 +470,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStreamingContent('');
     setThinkingText('Planning the task…');
     setAgentActivity([]);
+    setAgentStartedAt(Date.now());
+    setAgentFinishedAt(null);
+    setActiveTodos([]);
+    setActiveAttachments([]);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -427,10 +490,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const resolved = toolEvent.tool === 'web_search' ? ['search', 'Searching the web'] : toolEvent.tool === 'read_url' ? ['read', 'Reading sources'] : toolEvent.tool === 'run_code' ? ['code', 'Running code'] : ['tool', 'Running the tool'];
             setAgentActivity((prev) => {
               const running = prev.find((x) => x.status === 'running' && (x.tool === resolved[0] || x.tool === 'tool'));
-              if (toolEvent.status === 'start' && !running) return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tool: resolved[0] as any, title: resolved[1], detail: toolEvent.detail, status: 'running', startedAt: Date.now() }];
+              if (toolEvent.status === 'start' && !running) return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tool: resolved[0] as AgentActivityEvent['tool'], title: resolved[1], detail: toolEvent.detail, status: 'running', startedAt: Date.now() }];
               if (!running) return prev;
               return prev.map((x) => x.id === running.id ? { ...x, status: toolEvent.status === 'error' ? 'error' as const : 'done' as const, completedAt: Date.now(), detail: toolEvent.detail || x.detail, sources: toolEvent.sources || x.sources } : x);
             });
+          },
+          onTodo: (todos) => {
+            setActiveTodos(todos);
           },
           onChunk: (chunk) => {
             setThinkingText(null);
@@ -441,6 +507,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsStreaming(false);
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
+            setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
             refreshProfile();
             const updated = await apiRequest<ChatMessage[]>(
@@ -452,6 +519,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onError: (errMsg) => {
             setIsStreaming(false);
             setThinkingText(null);
+            setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
             pushErrorBubble(errMsg, streamTextRef.current);
           },
@@ -462,6 +530,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearStreamQueue();
       setIsStreaming(false);
       setThinkingText(null);
+      setAgentFinishedAt(Date.now());
       abortControllerRef.current = null;
       pushErrorBubble(err instanceof Error ? err.message : 'Regeneration failed.', streamTextRef.current);
     }
@@ -506,6 +575,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearError = () => setError(null);
 
+  const addAttachment = useCallback((att: PendingAttachment) => {
+    setPendingAttachments((prev) => [...prev, att]);
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setPendingAttachments([]);
+  }, []);
+
   const activeConversation =
     conversations.find((c) => c.id === activeConversationId) || null;
 
@@ -529,6 +610,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         streamingContent,
         thinkingText,
         agentActivity,
+        agentStartedAt,
+        agentFinishedAt,
+        activeTodos,
+        pendingAttachments,
+        activeAttachments,
         error,
         searchQuery,
         filteredConversations,
@@ -542,6 +628,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteConversation,
         deleteMessageItem,
         clearError,
+        addAttachment,
+        removeAttachment,
+        clearAttachments,
       }}
     >
       {children}

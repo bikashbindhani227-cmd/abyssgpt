@@ -1431,3 +1431,417 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
   .app:not(.sidebar-collapsed) .composer-wrap { left: 0; }
   .agent-sources { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   HACKER AI-INSPIRED ADDITIONS
+   Polished tool blocks, todo panel, shimmer text, sources dialog,
+   attachment chips, agent work header with timer.
+   These layer on top of the existing AbyssGPT design system
+   without replacing any working styles.
+   ============================================================ */
+
+/* ---------- Shimmer text (animated gradient sweep) ---------- */
+.shimmer-text {
+  position: relative;
+  display: inline-block;
+  color: var(--text-3);
+  background-image: linear-gradient(
+    90deg,
+    var(--text-3) 0%,
+    var(--text-3) 35%,
+    var(--text) 50%,
+    var(--text-3) 65%,
+    var(--text-3) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 1.8s linear infinite;
+}
+@keyframes shimmer-sweep {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; background-image: none; -webkit-text-fill-color: currentColor; color: var(--text-2); }
+}
+
+/* ---------- Tool block (compact pill: icon + action + target) ---------- */
+.tool-block {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  max-width: 100%;
+  overflow: hidden;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.tool-block:hover { background: var(--surface-3); border-color: var(--border-strong); }
+.tool-block .tool-block-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.tool-block .tool-block-icon svg { width: 14px; height: 14px; }
+.tool-block .tool-block-action { font-weight: 500; }
+.tool-block .tool-block-target {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.tool-block.tool-block-error { border-color: var(--error); color: var(--error); }
+.tool-block.tool-block-error .tool-block-icon { color: var(--error); }
+.tool-block.tool-block-done { color: var(--text-3); }
+
+/* ---------- Agent work header (collapsible timing chip) ---------- */
+.agent-work-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.agent-work-header:hover { background: var(--surface-2); }
+.agent-work-header .agent-work-chevron { transition: transform 0.18s ease; color: var(--text-3); }
+.agent-work-header[data-expanded="true"] .agent-work-chevron { transform: rotate(180deg); }
+.agent-work-header .agent-work-timer { color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* ---------- Todo panel ---------- */
+.todo-panel {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 15px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.todo-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 11px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.todo-panel-header:hover { background: var(--surface-3); }
+.todo-panel-header .todo-panel-icon { display: inline-flex; width: 16px; color: var(--text-2); flex: 0 0 auto; }
+.todo-panel-header .todo-panel-icon svg { width: 14px; height: 14px; }
+.todo-panel-header .todo-panel-counter { color: var(--text-3); font-size: 11px; margin-left: auto; }
+.todo-panel-header .todo-panel-chevron { color: var(--text-3); transition: transform 0.18s ease; }
+.todo-panel[data-expanded="true"] .todo-panel-chevron { transform: rotate(180deg); }
+.todo-panel-body { border-top: 1px solid var(--border); padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.todo-item .todo-status-icon { display: inline-flex; width: 14px; height: 14px; margin-top: 2px; flex: 0 0 auto; color: var(--text-3); }
+.todo-item.todo-completed { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.todo-item.todo-completed .todo-status-icon { color: var(--success); }
+.todo-item.todo-in-progress { color: var(--text); font-weight: 500; }
+.todo-item.todo-in-progress .todo-status-icon { color: var(--accent); }
+.todo-item.todo-cancelled { color: var(--text-3); text-decoration: line-through; }
+.todo-item.todo-cancelled .todo-status-icon { color: var(--text-3); }
+
+/* ---------- Attachment chip ---------- */
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  max-width: 100%;
+}
+.attachment-chip .attachment-icon { display: inline-flex; width: 14px; flex: 0 0 auto; color: var(--text-3); }
+.attachment-chip .attachment-icon svg { width: 12px; height: 12px; }
+.attachment-chip .attachment-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.attachment-chip .attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+.attachment-chip .attachment-remove:hover { background: var(--surface-3); color: var(--text); }
+.attachment-chip.attachment-rejected { color: var(--error); border-color: var(--error); }
+.attachment-chip.attachment-rejected .attachment-icon { color: var(--error); }
+
+/* ---------- Sources dialog ---------- */
+.sources-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fade-in 0.15s ease;
+}
+.sources-dialog {
+  width: 100%;
+  max-width: 720px;
+  max-height: 80vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.sources-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.sources-dialog-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sources-dialog-close:hover { background: var(--surface-2); color: var(--text); }
+.sources-dialog-list { overflow-y: auto; padding: 6px; }
+.sources-dialog-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  text-decoration: none;
+  color: var(--text);
+  transition: background 0.12s ease;
+}
+.sources-dialog-item:hover { background: var(--surface-2); }
+.sources-dialog-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.sources-dialog-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  flex: 0 0 auto;
+}
+.sources-dialog-title { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+.sources-dialog-text { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Composer: attachment preview row ---------- */
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+.composer-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 10px;
+  border-top: 1px solid var(--border);
+}
+.composer-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.composer-toolbar-btn:hover { background: var(--surface-2); color: var(--text-2); }
+.composer-toolbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.composer-toolbar-btn.active { background: var(--accent-soft); color: var(--accent); }
+.composer-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.composer-mode-pill .composer-mode-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.composer-mode-pill.composer-mode-agent .composer-mode-dot { background: var(--success); animation: pulse-dot 1.6s ease-in-out infinite; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* ---------- Improved empty-state prompt cards ---------- */
+.prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+  color: var(--text);
+}
+.prompt-card:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--elev-1);
+}
+.prompt-card-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.prompt-card-body { font-size: 12px; color: var(--text-3); line-height: 1.45; }
+
+/* ---------- Improved code block (header with language pill + copy) ---------- */
+.codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--code-border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--code-muted);
+}
+.codeblock-lang-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--code-text);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.codeblock-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--code-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.codeblock-copy:hover { background: rgba(255, 255, 255, 0.08); color: var(--code-text); }
+.codeblock-copy.copied { color: var(--success); }
+
+/* ---------- Streaming caret ---------- */
+.stream-caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
+
+/* ---------- Status line (when streaming but no content yet) ---------- */
+.stream-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 2px 0;
+}
+.stream-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
