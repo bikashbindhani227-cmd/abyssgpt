@@ -11,10 +11,12 @@ import { userRouter } from './server/routes/user.js';
 import { memoryRouter } from './server/routes/memory.js';
 import { adminRouter } from './server/routes/admin.js';
 import { getAppSettingsConfig } from './server/services/configService.js';
+import { ensureFirebaseAuthSettings } from './server/config/firebaseAdmin.js';
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDirname = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -25,22 +27,23 @@ const configuredOrigins = (process.env.FRONTEND_URL || '')
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
-    // Browser requests always carry an Origin header; allow server-to-server/health requests too.
-    if (!origin) return callback(null, true);
-    const normalized = origin.replace(/\/$/, '');
-    const isAiStudio = /\.run\.app$/i.test(normalized) || /\.googleusercontent\.com$/i.test(normalized);
-    const isVercelPreview = /^https:\/\/abyssgpt(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(normalized);
-    const isLocalDev = /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
-    if (configuredOrigins.includes(normalized) || isAiStudio || isVercelPreview || isLocalDev || process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
     return callback(null, true);
   },
-  credentials: false,
+  credentials: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token', 'Accept'],
 };
 
 app.disable('x-powered-by');
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
+    frameguard: false,
+  })
+);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -58,8 +61,8 @@ function getFrontendDistDir(): string | null {
     path.resolve(process.cwd(), '..', 'frontend', 'dist'),
     path.resolve(process.cwd(), 'dist', 'frontend'),
     path.resolve(process.cwd(), 'dist'),
-    path.resolve(__dirname, '..', 'frontend', 'dist'),
-    path.resolve(__dirname, '..', '..', 'frontend', 'dist'),
+    path.resolve(currentDirname, '..', 'frontend', 'dist'),
+    path.resolve(currentDirname, '..', '..', 'frontend', 'dist'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, 'index.html'))) {
@@ -85,4 +88,7 @@ app.get('*', (_req, res) => {
   }
 });
 
-app.listen(PORT,'0.0.0.0',()=>console.log(`AbyssGPT backend listening on 0.0.0.0:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`AbyssGPT backend listening on 0.0.0.0:${PORT}`);
+  ensureFirebaseAuthSettings().catch((err) => console.warn('Auth settings error:', err));
+});

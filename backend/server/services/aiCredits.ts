@@ -7,7 +7,23 @@ export interface AgentToolDefinition { type: 'function'; function: { name: strin
 export type AgentToolExecutor = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 const MODEL_ID = process.env.MODEL_ID?.trim() || '';
 const AICREDITS_API_KEY = process.env.AICREDITS_API_KEY?.trim() || '';
-const AICREDITS_BASE_URL = (process.env.AICREDITS_BASE_URL || 'https://api.aicredits.in/v1').replace(/\/$/, '');
+
+export function normalizeAiCreditsBaseUrl(rawUrl?: string): string {
+  let url = String(rawUrl || '').trim().replace(/\/$/, '');
+  if (!url) {
+    return 'https://api.aicredits.in/v1';
+  }
+  url = url.replace(/api\.aicredits\.com/gi, 'api.aicredits.in');
+  if (url.startsWith('http://api.aicredits.in')) {
+    url = url.replace('http://', 'https://');
+  }
+  if (/^https:\/\/api\.aicredits\.in$/i.test(url)) {
+    url = `${url}/v1`;
+  }
+  return url;
+}
+
+const getAiCreditsBaseUrl = () => normalizeAiCreditsBaseUrl(process.env.AICREDITS_BASE_URL);
 function assertConfigured() { if (!AICREDITS_API_KEY) throw new Error('AICREDITS_API_KEY is not configured on the backend.'); if (!MODEL_ID) throw new Error('MODEL_ID is not configured on the backend.'); }
 function sleep(ms: number, signal?: AbortSignal) { if (signal?.aborted) return Promise.resolve(); return new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); }); }
 
@@ -40,7 +56,7 @@ function safeNetworkErrorDetails(error: unknown) {
 }
 async function requestAICredits(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   assertConfigured(); let lastError: unknown = undefined;
-  const requestUrl = `${AICREDITS_BASE_URL}/chat/completions`;
+  const requestUrl = `${getAiCreditsBaseUrl()}/chat/completions`;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const fetchStart = Date.now();
     console.log('[ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString() }));

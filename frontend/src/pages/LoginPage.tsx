@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 import { Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 import { Spinner } from '../components/ui.js';
+import { formatAuthError } from '../lib/authErrors.js';
 
 interface LoginPageProps {
   onNavigate: (page: string) => void;
@@ -28,8 +29,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       await signInWithEmail(email, password);
       onNavigate('chat');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Login failed. Check your credentials.';
-      setError(msg);
+      setError(formatAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -42,8 +42,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       await signInWithGoogle();
       onNavigate('chat');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
-      setError(msg);
+      setError(formatAuthError(err));
     } finally {
       setLoading(false);
     }

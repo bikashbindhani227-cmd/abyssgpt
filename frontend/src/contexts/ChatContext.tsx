@@ -124,12 +124,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoadingConversations(true);
     try {
       const data = await apiRequest<Conversation[]>('/api/conversations');
-      setConversations(data);
-      if (data.length > 0 && !activeConversationId) {
-        // Optionally select first conversation if none selected
-      }
+      setConversations(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
-      console.error('Failed to load conversations:', err);
+      console.warn('Could not load conversations from server:', err);
+      setConversations((prev) => prev || []);
     } finally {
       setIsLoadingConversations(false);
     }

@@ -9,8 +9,13 @@ const usersCollection = () => adminDb.collection('users');
 
 async function firestoreUser(uid: string): Promise<UserProfile | null> {
   if (!hasServiceAccount) return null;
-  const snap = await usersCollection().doc(uid).get();
-  return snap.exists ? (snap.data() as UserProfile) : null;
+  try {
+    const snap = await usersCollection().doc(uid).get();
+    return snap.exists ? (snap.data() as UserProfile) : null;
+  } catch (err) {
+    console.warn('Could not read user from Firestore, falling back to local cache:', err);
+    return null;
+  }
 }
 
 function cacheUser(user: UserProfile) {

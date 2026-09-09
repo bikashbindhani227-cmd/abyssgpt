@@ -2,9 +2,12 @@ import { auth } from './firebase.js';
 import type { ChatMessage } from '../types.js';
 
 const DEFAULT_API_BASE = '';
-const configuredApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
-const API_BASE = /^https?:\/\//i.test(configuredApiBase)
-  ? configuredApiBase.replace(/\/$/, '')
+const rawApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+const isPlaceholder =
+  !rawApiBase ||
+  /YOUR-RENDER-BACKEND|your-backend|placeholder|example\.com/i.test(rawApiBase);
+const API_BASE = !isPlaceholder && /^https?:\/\//i.test(rawApiBase)
+  ? rawApiBase.replace(/\/$/, '')
   : DEFAULT_API_BASE;
 
 function getAdminToken(): string | null {
@@ -15,12 +18,46 @@ export function clearAdminToken(): void { sessionStorage.removeItem('abyssgpt_ad
 export function hasAdminToken(): boolean { return Boolean(getAdminToken()); }
 async function getAuthToken(): Promise<string | null> { const currentUser = auth.currentUser; if (!currentUser) return null; return await currentUser.getIdToken(); }
 
-export async function apiRequest<T = unknown>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = await getAuthToken(); const headers = new Headers(options.headers || {}); headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`); const adminToken = getAdminToken(); if (adminToken && endpoint.startsWith('/api/admin/')) headers.set('X-Admin-Token', adminToken);
-  const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers, cache: 'no-store' });
-  if (!response.ok) { let errorMsg = `Request failed with status ${response.status}`; try { const errJson = await response.json(); if (errJson.error) errorMsg = errJson.error; } catch {} const err = new Error(errorMsg); (err as unknown as { status: number }).status = response.status; throw err; }
-  return (await response.json()) as T;
+export async function apiRequest<T = unknown>(
+  endpoint: string,
+  options: RequestInit = {},
+  retries = 2
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      const token = await getAuthToken();
+      const headers = new Headers(options.headers || {});
+      headers.set('Content-Type', 'application/json');
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      const adminToken = getAdminToken();
+      if (adminToken && endpoint.startsWith('/api/admin/')) headers.set('X-Admin-Token', adminToken);
+      const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers, cache: 'no-store' });
+      if (!response.ok) {
+        let errorMsg = `Request failed with status ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson.error) errorMsg = errJson.error;
+        } catch {}
+        const err = new Error(errorMsg);
+        (err as unknown as { status: number }).status = response.status;
+        throw err;
+      }
+      return (await response.json()) as T;
+    } catch (err: unknown) {
+      const method = (options.method || 'GET').toUpperCase();
+      const isRetryable = method === 'GET' || method === 'HEAD';
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && /failed to fetch|networkerror|load failed/i.test(err.message));
+      if (isRetryable && attempt < retries && isNetworkError) {
+        attempt++;
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 export interface StreamAttachmentMeta { filename: string; mimeType: string; size: number; rejected?: boolean; rejectionReason?: string; hasTextContent: boolean; }

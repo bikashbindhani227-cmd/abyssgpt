@@ -90,7 +90,29 @@ export function normalizeAssistantMessage(rawMessage: unknown, rawFinishReason: 
 }
 
 export interface ModelAdapterConfig { modelId: string; baseUrl: string; apiKey: string; }
-export function resolveAdapterConfigFromEnv(): ModelAdapterConfig { return { modelId: process.env.MODEL_ID?.trim() || '', apiKey: process.env.AICREDITS_API_KEY?.trim() || '', baseUrl: (process.env.AICREDITS_BASE_URL || 'https://api.aicredits.in/v1').replace(/\/$/, '') }; }
+
+export function normalizeAiCreditsBaseUrl(rawUrl?: string): string {
+  let url = String(rawUrl || '').trim().replace(/\/$/, '');
+  if (!url) {
+    return 'https://api.aicredits.in/v1';
+  }
+  url = url.replace(/api\.aicredits\.com/gi, 'api.aicredits.in');
+  if (url.startsWith('http://api.aicredits.in')) {
+    url = url.replace('http://', 'https://');
+  }
+  if (/^https:\/\/api\.aicredits\.in$/i.test(url)) {
+    url = `${url}/v1`;
+  }
+  return url;
+}
+
+export function resolveAdapterConfigFromEnv(): ModelAdapterConfig {
+  return {
+    modelId: process.env.MODEL_ID?.trim() || '',
+    apiKey: process.env.AICREDITS_API_KEY?.trim() || '',
+    baseUrl: normalizeAiCreditsBaseUrl(process.env.AICREDITS_BASE_URL),
+  };
+}
 export interface GenerateCompletionOptions { tools?: AgentToolDefinition[]; forcedToolName?: string; signal?: AbortSignal; }
 export interface ModelAdapter {
   modelId(): string;
@@ -249,7 +271,11 @@ async function parseStreamingResponse(response: Response, signal?: AbortSignal):
   }
   return events();
 }
-export function createModelAdapter(config: ModelAdapterConfig = resolveAdapterConfigFromEnv()): ModelAdapter {
+export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapterConfigFromEnv()): ModelAdapter {
+  const config: ModelAdapterConfig = {
+    ...rawConfig,
+    baseUrl: normalizeAiCreditsBaseUrl(rawConfig.baseUrl),
+  };
   async function generateCompletion(messages: ChatMessagePayload[], options: GenerateCompletionOptions = {}): Promise<NormalizedModelResponse> {
     const tools = options.tools || [];
     const protocolMessages = messagesForProtocol(messages);

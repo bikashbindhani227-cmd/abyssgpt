@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 import { Mail, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 import { Spinner } from '../components/ui.js';
+import { formatAuthError } from '../lib/authErrors.js';
 
 interface ForgotPasswordPageProps {
   onNavigate: (page: string) => void;
@@ -27,8 +28,7 @@ export const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNaviga
       await sendPasswordReset(email);
       setSuccess(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send reset email.';
-      setError(msg);
+      setError(formatAuthError(err));
     } finally {
       setLoading(false);
     }
