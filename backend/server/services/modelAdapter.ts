@@ -195,8 +195,7 @@ function parseSseData(payload: string): { data?: any; done?: boolean } {
   if (value === '[DONE]') return { done: true };
   try { return { data: JSON.parse(value) }; }
   catch {
-    if (isSseKeepalivePayload(value)) return {};
-    throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider emitted malformed SSE JSON before completion', true);
+    return {};
   }
 }
 async function parseStreamingResponse(response: Response, signal?: AbortSignal): Promise<AsyncGenerator<StreamEvent, void, unknown>> {

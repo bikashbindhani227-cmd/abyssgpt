@@ -1,7 +1,7 @@
 import { auth } from './firebase.js';
 import type { ChatMessage } from '../types.js';
 
-const DEFAULT_API_BASE = 'https://abyssgpt-cb9k.onrender.com';
+const DEFAULT_API_BASE = '';
 const configuredApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
 const API_BASE = /^https?:\/\//i.test(configuredApiBase)
   ? configuredApiBase.replace(/\/$/, '')

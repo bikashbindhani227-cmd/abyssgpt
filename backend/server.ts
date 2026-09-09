@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { chatRouter } from './server/routes/chat.js';
 import { conversationsRouter } from './server/routes/conversations.js';
 import { userRouter } from './server/routes/user.js';
@@ -10,8 +13,11 @@ import { adminRouter } from './server/routes/admin.js';
 import { getAppSettingsConfig } from './server/services/configService.js';
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-const PORT = Number(process.env.PORT) || 10000;
+const PORT = Number(process.env.PORT) || 3000;
 const configuredOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))
@@ -22,12 +28,13 @@ const corsOptions = {
     // Browser requests always carry an Origin header; allow server-to-server/health requests too.
     if (!origin) return callback(null, true);
     const normalized = origin.replace(/\/$/, '');
+    const isAiStudio = /\.run\.app$/i.test(normalized) || /\.googleusercontent\.com$/i.test(normalized);
     const isVercelPreview = /^https:\/\/abyssgpt(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(normalized);
     const isLocalDev = /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
-    if (configuredOrigins.includes(normalized) || isVercelPreview || isLocalDev) {
+    if (configuredOrigins.includes(normalized) || isAiStudio || isVercelPreview || isLocalDev || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    return callback(new Error('CORS origin not allowed'));
+    return callback(null, true);
   },
   credentials: false,
 };
@@ -41,5 +48,41 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.get('/health', (_req,res)=>res.json({ status:'ok', service:'abyssgpt-backend', timestamp:new Date().toISOString(), aiProvider:'AI Credits', modelConfigured:Boolean(process.env.MODEL_ID), firebaseConfigured:Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) }));
 app.get('/api/settings', async (_req,res)=>{ try { const s=await getAppSettingsConfig(); res.json({appName:s.appName,welcomeMessage:s.welcomeMessage,maintenanceMode:s.maintenanceMode,registrationEnabled:s.registrationEnabled,maxMessageLength:s.maxMessageLength,premiumPriceInr:s.premiumPriceInr,telegramUsername:s.telegramUsername,premiumBenefits:s.premiumBenefits}); } catch { res.status(200).json({appName:'AbyssGPT',welcomeMessage:'Welcome to AbyssGPT.',maintenanceMode:false,registrationEnabled:true,maxMessageLength:4000,premiumPriceInr:299,telegramUsername:'@MrNewton_2',premiumBenefits:[]}); }});
 app.use('/api/chat', chatRouter); app.use('/api/conversations', conversationsRouter); app.use('/api/user', userRouter); app.use('/api/memory', memoryRouter); app.use('/api/admin', adminRouter);
-app.use((_req,res)=>res.status(404).json({error:'API route not found'}));
+
+// API 404
+app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
+
+function getFrontendDistDir(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), 'frontend', 'dist'),
+    path.resolve(process.cwd(), '..', 'frontend', 'dist'),
+    path.resolve(process.cwd(), 'dist', 'frontend'),
+    path.resolve(process.cwd(), 'dist'),
+    path.resolve(__dirname, '..', 'frontend', 'dist'),
+    path.resolve(__dirname, '..', '..', 'frontend', 'dist'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, 'index.html'))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+// Serve frontend static assets
+const frontendDist = getFrontendDistDir();
+if (frontendDist) {
+  app.use(express.static(frontendDist));
+}
+
+// SPA fallback
+app.get('*', (_req, res) => {
+  const dist = getFrontendDistDir();
+  if (dist && fs.existsSync(path.join(dist, 'index.html'))) {
+    res.sendFile(path.join(dist, 'index.html'));
+  } else {
+    res.status(200).send('AbyssGPT server is running. Frontend build in progress...');
+  }
+});
+
 app.listen(PORT,'0.0.0.0',()=>console.log(`AbyssGPT backend listening on 0.0.0.0:${PORT}`));

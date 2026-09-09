@@ -22,7 +22,20 @@ interface StorageData {
   };
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
+function getDataDir(): string {
+  const candidates = [
+    path.resolve(process.cwd(), 'backend', 'server', 'data'),
+    path.resolve(process.cwd(), 'server', 'data'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return fs.existsSync(path.resolve(process.cwd(), 'backend'))
+    ? path.resolve(process.cwd(), 'backend', 'server', 'data')
+    : path.resolve(process.cwd(), 'server', 'data');
+}
+
+const DATA_DIR = getDataDir();
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
 
 class PersistentStorage {

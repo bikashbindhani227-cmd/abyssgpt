@@ -2,10 +2,18 @@
   "name": "abyssgpt",
   "private": true,
   "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
-    "test": "npm --prefix backend test",
-    "build": "npm run build:frontend && npm run build:backend",
-    "build:frontend": "npm --prefix frontend run build",
-    "build:backend": "npm --prefix backend run build"
+    "dev": "npm run build:frontend && npm run dev --workspace=backend",
+    "build": "npm run build:frontend && npm run build:backend && mkdir -p dist && cp -r backend/dist/* dist/",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "start": "node dist/server.cjs",
+    "lint": "npm run lint --workspace=frontend",
+    "test": "npm run test --workspace=backend"
   }
 }
