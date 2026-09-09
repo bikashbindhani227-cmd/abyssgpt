@@ -19,7 +19,7 @@ export async function apiRequest<T = unknown>(endpoint: string, options: Request
   const token = await getAuthToken(); const headers = new Headers(options.headers || {}); headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`); const adminToken = getAdminToken(); if (adminToken && endpoint.startsWith('/api/admin/')) headers.set('X-Admin-Token', adminToken);
   const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers, cache: 'no-store' });
-  if (!response.ok) { let errorMsg = `Request failed with status ${response.status}`; try { const errJson = await response.json(); if (errJson.error) errorMsg = errJson.error; } catch { /* keep fallback */ } const err = new Error(errorMsg); (err as unknown as { status: number }).status = response.status; throw err; }
+  if (!response.ok) { let errorMsg = `Request failed with status ${response.status}`; try { const errJson = await response.json(); if (errJson.error) errorMsg = errJson.error; } catch {} const err = new Error(errorMsg); (err as unknown as { status: number }).status = response.status; throw err; }
   return (await response.json()) as T;
 }
 
@@ -32,7 +32,7 @@ export async function streamChatApi(payload: StreamChatPayload, callbacks: Strea
   const token = await getAuthToken(); const headers = new Headers(); headers.set('Content-Type', 'application/json'); if (token) headers.set('Authorization', `Bearer ${token}`);
   const url = `${API_BASE}/api/chat/stream`; let response: Response;
   try { response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal }); } catch { if (signal?.aborted) return; callbacks.onError('Unable to connect to AbyssGPT server. Please try again in a moment.'); return; }
-  if (!response.ok) { let errorMsg = `Stream request failed: ${response.status}`; try { const errJson = await response.json(); if (errJson.error) errorMsg = errJson.error; } catch { /* ignore */ } callbacks.onError(errorMsg); return; }
+  if (!response.ok) { let errorMsg = `Stream request failed: ${response.status}`; try { const errJson = await response.json(); if (errJson.error) errorMsg = errJson.error; } catch {} callbacks.onError(errorMsg); return; }
   if (!response.body) { callbacks.onError('Readable stream not supported in response.'); return; }
   const reader = response.body.getReader(); const decoder = new TextDecoder('utf-8'); let buffer = ''; let sawDone = false; let sawError = false;
   try {
@@ -54,9 +54,9 @@ export async function streamChatApi(payload: StreamChatPayload, callbacks: Strea
       }
     }
     buffer += decoder.decode();
-    for (const line of buffer.split(/\r?\n/)) {
-      const trimmed = line.trim(); if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data: ')) continue;
-      const data = JSON.parse(trimmed.slice(6));
+    const finalLine = buffer.trim();
+    if (finalLine.startsWith('data: ')) {
+      const data = JSON.parse(finalLine.slice(6));
       if (data.type === 'done') { sawDone = true; callbacks.onDone(data); return; }
       if (data.type === 'error') { sawError = true; callbacks.onError(data.error || 'Stream error'); return; }
       if (data.type === 'chunk' && typeof data.text === 'string') callbacks.onChunk(data.text);
