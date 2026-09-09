@@ -210,7 +210,17 @@ async function runAgentStream(
   // backend regardless of what the model or planner does.
   const totalTimeoutMs = budgetPlan.budget.TOTAL_AGENT_TIMEOUT_MS + 5000;
   const totalTimer = setTimeout(() => {
-    if (!abortController.signal.aborted) abortController.abort();
+    if (!abortController.signal.aborted) {
+      console.error('[stream-abort]', JSON.stringify({
+        reason: 'server_total_timeout',
+        budgetTimeoutMs: budgetPlan.budget.TOTAL_AGENT_TIMEOUT_MS,
+        enforcedTimeoutMs: totalTimeoutMs,
+        category: budgetPlan.category,
+        complexity: budgetPlan.complexity,
+        timestamp: new Date().toISOString(),
+      }));
+      abortController.abort('server_total_timeout');
+    }
   }, totalTimeoutMs);
   totalTimer.unref?.();
 
@@ -409,12 +419,22 @@ chatRouter.post(
     payloadMessages.push({ role: 'user', content: cleanMessage });
 
     const abortController = new AbortController();
-    const abortUpstream = () => {
-      if (!abortController.signal.aborted) abortController.abort();
+    const abortUpstream = (reason: string) => {
+      if (!abortController.signal.aborted) {
+        console.error('[stream-abort]', JSON.stringify({
+          reason,
+          url: req.url,
+          method: req.method,
+          writableEnded: res.writableEnded,
+          headersSent: res.headersSent,
+          timestamp: new Date().toISOString(),
+        }));
+        abortController.abort(reason);
+      }
     };
-    req.on('aborted', abortUpstream);
+    req.on('aborted', () => abortUpstream('request_aborted'));
     res.on('close', () => {
-      if (!res.writableEnded) abortUpstream();
+      if (!res.writableEnded) abortUpstream('response_closed');
     });
 
     let accumulatedText = '';
