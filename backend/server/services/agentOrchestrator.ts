@@ -41,10 +41,12 @@ interface ToolRoundResult { id: string; content: string; }
 interface ToolRoundOutcome { results: ToolRoundResult[]; accounted: number; }
 
 /**
- * The orchestrator validates calls and observes the shared tracker, while the
- * injected executor is the single owner of budget gating/accounting for calls.
- * This is important because chat.ts also uses the same executor for automatic
- * bootstrap tools; counting here as well would consume one budget slot twice.
+ * The orchestrator validates and budget-gates calls before invoking the executor.
+ * The executor may also own the same gate/accounting (as chat.ts does), so a
+ * successful invocation is only recorded here when the executor did not already
+ * account for it. This keeps the shared BudgetTracker authoritative without
+ * double-counting production calls while still making the ModelAdapter contract
+ * usable with plain test/custom executors.
  */
 async function executeToolRound(calls: NormalizedToolCall[], executeTool: AgentToolExecutor, tracker: BudgetTracker, signal?: AbortSignal): Promise<ToolRoundOutcome> {
   const results: ToolRoundResult[] = [];
@@ -55,6 +57,8 @@ async function executeToolRound(calls: NormalizedToolCall[], executeTool: AgentT
     if (seenFingerprints.has(fp)) { results.push({ id: call.id, content: 'Duplicate tool call dropped this round.' }); continue; }
     seenFingerprints.add(fp);
     if (executable.length >= MAX_CALLS_PER_ROUND) { results.push({ id: call.id, content: 'Skipped: too many parallel tool calls requested this round.' }); continue; }
+    const gate = tracker.canCallTool(call.name, call.args);
+    if (!gate.allowed) { results.push({ id: call.id, content: `Tool call blocked by resource manager: ${gate.reason}.` }); continue; }
     executable.push(call);
   }
   let accounted = 0;
@@ -71,13 +75,15 @@ async function executeToolRound(calls: NormalizedToolCall[], executeTool: AgentT
       const output = await executeTool(call.name, validation.value as Record<string, unknown>, signal);
       const after = tracker.toolCallsUsedCount;
       if (after > before) accounted += after - before;
+      else {
+        tracker.recordToolCall(call.name, validation.value as Record<string, unknown>, true, String(output ?? ''), 0);
+        accounted += 1;
+      }
       results.push({ id: call.id, content: fenceToolOutput(call.name, output) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const after = tracker.toolCallsUsedCount;
       if (after === before) {
-        // Defensive compatibility: an executor that throws before accounting
-        // must still be represented once in the authoritative tracker.
         tracker.recordToolCall(call.name, validation.value as Record<string, unknown>, false, `Tool failed: ${message}`, 0);
         accounted += 1;
       } else accounted += after - before;
@@ -90,11 +96,12 @@ async function executeToolRound(calls: NormalizedToolCall[], executeTool: AgentT
 }
 
 export async function* runAgentOrchestration(params: OrchestratorParams): AsyncGenerator<StreamEvent, void, unknown> {
-  const { adapter, tools, executeTool, signal, forcedFirstTool } = params;
+  const { adapter, tools, executeTool, signal } = params;
   if (!tools.length) { yield* adapter.streamCompletion(params.messages, { signal }); return; }
   const resolvedPlan = params.plan || createBudgetForRequest(params.messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '');
   const tracker = params.tracker || new BudgetTracker(resolvedPlan);
   const working = [...params.messages];
+  const forcedFirstTool = params.forcedFirstTool ?? resolvedPlan.forcedFirstTool;
   let expandedOnce = false;
   let malformedRecoveriesUsed = 0;
   let verificationNudged = false;
