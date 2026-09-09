@@ -127,24 +127,42 @@ function safeNetworkErrorDetails(error: unknown) {
     hostname: typeof value?.hostname === 'string' ? value.hostname : undefined,
   };
 }
+const AICREDITS_FETCH_TIMEOUT_MS = 10_000;
+function createFetchSignal(parentSignal?: AbortSignal): { signal: AbortSignal; timedOut: () => boolean; cleanup: () => void } {
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timer = setTimeout(() => { didTimeout = true; controller.abort(new Error('AI Credits connection timeout')); }, AICREDITS_FETCH_TIMEOUT_MS);
+  const onAbort = () => controller.abort(parentSignal?.reason);
+  if (parentSignal) {
+    if (parentSignal.aborted) onAbort();
+    else parentSignal.addEventListener('abort', onAbort, { once: true });
+  }
+  return { signal: controller.signal, timedOut: () => didTimeout, cleanup: () => { clearTimeout(timer); parentSignal?.removeEventListener('abort', onAbort); } };
+}
 async function requestChatCompletion(config: ModelAdapterConfig, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   if (!config.apiKey) throw new ModelError('not_configured', safeMessage('not_configured'), 'AICREDITS_API_KEY is not set');
   if (!config.modelId) throw new ModelError('not_configured', safeMessage('not_configured'), 'MODEL_ID is not set');
   let lastError: unknown = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const fetchStart = Date.now();
-    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString() }));
+    const fetchControl = createFetchSignal(signal);
+    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString(), timeout_ms: AICREDITS_FETCH_TIMEOUT_MS }));
     try {
-      const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal });
+      const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal: fetchControl.signal });
       console.log('[model-ai-credits-response]', JSON.stringify({ event: 'response_received', attempt: attempt + 1, timestamp: new Date().toISOString(), status: response.status, elapsed_ms: Date.now() - fetchStart }));
       if (response.ok || (response.status !== 429 && response.status < 500)) return response;
-      lastError = `${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`;
+      const rawError = await response.text().catch(() => '');
+      lastError = `${response.status}: ${rawError.slice(0, 700)}`;
       if (response.status === 429) throw new ModelError('rate_limited', safeMessage('rate_limited'), `provider 429: ${lastError}`, true);
     } catch (error) {
-      console.log('[model-ai-credits-network-error]', JSON.stringify({ event: 'fetch_error', attempt: attempt + 1, timestamp: new Date().toISOString(), elapsed_ms: Date.now() - fetchStart, category: classifyNetworkError(error, signal), ...safeNetworkErrorDetails(error), signal_aborted: Boolean(signal?.aborted) }));
+      const timedOut = fetchControl.timedOut();
+      const effectiveError = timedOut && !signal?.aborted ? Object.assign(new Error('AI Credits connection timed out'), { code: 'ETIMEDOUT' }) : error;
+      console.log('[model-ai-credits-network-error]', JSON.stringify({ event: 'fetch_error', attempt: attempt + 1, timestamp: new Date().toISOString(), elapsed_ms: Date.now() - fetchStart, category: timedOut ? 'TIMEOUT' : classifyNetworkError(effectiveError, signal), ...safeNetworkErrorDetails(effectiveError), signal_aborted: Boolean(signal?.aborted), timeout_triggered: timedOut }));
       if (signal?.aborted) throw toModelError(error, signal);
       if (error instanceof ModelError) throw error;
-      lastError = error;
+      lastError = effectiveError;
+    } finally {
+      fetchControl.cleanup();
     }
     if (attempt < 2) await sleep(350 * (2 ** attempt), signal);
   }
@@ -167,7 +185,6 @@ function messagesForProtocol(messages: ChatMessagePayload[]): ChatMessagePayload
     return { role: m.role, content: m.content };
   });
 }
-
 function isSseKeepalivePayload(payload: string): boolean {
   const value = payload.trim().toLowerCase();
   return ['ping', 'pong', 'keepalive', 'keep-alive', 'heartbeat'].includes(value);
@@ -182,7 +199,6 @@ function parseSseData(payload: string): { data?: any; done?: boolean } {
     throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider emitted malformed SSE JSON before completion', true);
   }
 }
-
 async function parseStreamingResponse(response: Response, signal?: AbortSignal): Promise<AsyncGenerator<StreamEvent, void, unknown>> {
   if (!response.body) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider returned an empty stream', true);
   const reader = response.body.getReader();
@@ -234,7 +250,6 @@ async function parseStreamingResponse(response: Response, signal?: AbortSignal):
   }
   return events();
 }
-
 export function createModelAdapter(config: ModelAdapterConfig = resolveAdapterConfigFromEnv()): ModelAdapter {
   async function generateCompletion(messages: ChatMessagePayload[], options: GenerateCompletionOptions = {}): Promise<NormalizedModelResponse> {
     const tools = options.tools || [];
