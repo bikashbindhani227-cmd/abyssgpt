@@ -100,20 +100,56 @@ export interface ModelAdapter {
 }
 function sleep(ms: number, signal?: AbortSignal): Promise<void> { if (signal?.aborted) return Promise.resolve(); return new Promise((resolve) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); }); }
 function toModelError(err: unknown, signal?: AbortSignal): ModelError { if (signal?.aborted) return new ModelError('aborted', safeMessage('aborted'), 'request aborted by caller'); if (err instanceof ModelError) return err; return new ModelError('network', safeMessage('network'), err instanceof Error ? err.message : String(err)); }
+type NetworkErrorCategory = 'DNS' | 'TLS' | 'CONNECT' | 'TIMEOUT' | 'RESET' | 'ABORT' | 'UNKNOWN';
+function classifyNetworkError(error: unknown, signal?: AbortSignal): NetworkErrorCategory {
+  if (signal?.aborted) return 'ABORT';
+  const value = error as { name?: unknown; code?: unknown; cause?: { code?: unknown } } | null;
+  const name = typeof value?.name === 'string' ? value.name.toUpperCase() : '';
+  const code = typeof value?.code === 'string' ? value.code.toUpperCase() : '';
+  const causeCode = typeof value?.cause?.code === 'string' ? value.cause.code.toUpperCase() : '';
+  const combined = `${name} ${code} ${causeCode}`;
+  if (['EAI_AGAIN', 'EAI_FAIL', 'EAI_NONAME', 'ENOTFOUND'].some((item) => combined.includes(item))) return 'DNS';
+  if (['ERR_TLS_', 'CERT_', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT'].some((item) => combined.includes(item))) return 'TLS';
+  if (['ECONNRESET', 'ERR_CONNECTION_RESET'].some((item) => combined.includes(item))) return 'RESET';
+  if (['ETIMEDOUT', 'ERR_TIMEOUT', 'TIMEOUT'].some((item) => combined.includes(item))) return 'TIMEOUT';
+  if (['ECONNREFUSED', 'ECONNABORTED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].some((item) => combined.includes(item))) return 'CONNECT';
+  return 'UNKNOWN';
+}
+function safeNetworkErrorDetails(error: unknown) {
+  const value = error as { name?: unknown; code?: unknown; errno?: unknown; syscall?: unknown; hostname?: unknown; cause?: { code?: unknown } } | null;
+  const cause = value?.cause;
+  return {
+    name: typeof value?.name === 'string' ? value.name : undefined,
+    code: typeof value?.code === 'string' || typeof value?.code === 'number' ? value.code : undefined,
+    cause_code: typeof cause?.code === 'string' || typeof cause?.code === 'number' ? cause.code : undefined,
+    syscall: typeof value?.syscall === 'string' ? value.syscall : undefined,
+    errno: typeof value?.errno === 'string' || typeof value?.errno === 'number' ? value.errno : undefined,
+    hostname: typeof value?.hostname === 'string' ? value.hostname : undefined,
+  };
+}
 async function requestChatCompletion(config: ModelAdapterConfig, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   if (!config.apiKey) throw new ModelError('not_configured', safeMessage('not_configured'), 'AICREDITS_API_KEY is not set');
   if (!config.modelId) throw new ModelError('not_configured', safeMessage('not_configured'), 'MODEL_ID is not set');
-  let lastError = '';
+  let lastError: unknown = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const fetchStart = Date.now();
+    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString() }));
     try {
       const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal });
+      console.log('[model-ai-credits-response]', JSON.stringify({ event: 'response_received', attempt: attempt + 1, timestamp: new Date().toISOString(), status: response.status, elapsed_ms: Date.now() - fetchStart }));
       if (response.ok || (response.status !== 429 && response.status < 500)) return response;
       lastError = `${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`;
       if (response.status === 429) throw new ModelError('rate_limited', safeMessage('rate_limited'), `provider 429: ${lastError}`, true);
-    } catch (error) { if (signal?.aborted) throw toModelError(error, signal); if (error instanceof ModelError) throw error; lastError = error instanceof Error ? error.message : String(error); }
+    } catch (error) {
+      console.log('[model-ai-credits-network-error]', JSON.stringify({ event: 'fetch_error', attempt: attempt + 1, timestamp: new Date().toISOString(), elapsed_ms: Date.now() - fetchStart, category: classifyNetworkError(error, signal), ...safeNetworkErrorDetails(error), signal_aborted: Boolean(signal?.aborted) }));
+      if (signal?.aborted) throw toModelError(error, signal);
+      if (error instanceof ModelError) throw error;
+      lastError = error;
+    }
     if (attempt < 2) await sleep(350 * (2 ** attempt), signal);
   }
-  throw new ModelError('provider_error', safeMessage('provider_error'), `AI provider request failed after retries: ${lastError}`, true);
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new ModelError('provider_error', safeMessage('provider_error'), `AI provider request failed after retries: ${detail}`, true);
 }
 async function requestWithCapabilityFallback(config: ModelAdapterConfig, buildBody: (remove: { toolChoice: boolean }) => Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   const response = await requestChatCompletion(config, buildBody({ toolChoice: true }), signal);
