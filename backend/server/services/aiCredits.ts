@@ -10,17 +10,60 @@ const AICREDITS_API_KEY = process.env.AICREDITS_API_KEY?.trim() || '';
 const AICREDITS_BASE_URL = (process.env.AICREDITS_BASE_URL || 'https://api.aicredits.in/v1').replace(/\/$/, '');
 function assertConfigured() { if (!AICREDITS_API_KEY) throw new Error('AICREDITS_API_KEY is not configured on the backend.'); if (!MODEL_ID) throw new Error('MODEL_ID is not configured on the backend.'); }
 function sleep(ms: number, signal?: AbortSignal) { if (signal?.aborted) return Promise.resolve(); return new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); }); }
+
+type NetworkErrorCategory = 'DNS' | 'TLS' | 'CONNECT' | 'TIMEOUT' | 'RESET' | 'ABORT' | 'UNKNOWN';
+function classifyNetworkError(error: unknown, signal?: AbortSignal): NetworkErrorCategory {
+  if (signal?.aborted) return 'ABORT';
+  const value = error as { name?: unknown; code?: unknown; cause?: { code?: unknown; syscall?: unknown } } | null;
+  const name = typeof value?.name === 'string' ? value.name.toUpperCase() : '';
+  const code = typeof value?.code === 'string' ? value.code.toUpperCase() : '';
+  const causeCode = typeof value?.cause?.code === 'string' ? value.cause.code.toUpperCase() : '';
+  const combined = `${name} ${code} ${causeCode}`;
+  if (['EAI_AGAIN', 'EAI_FAIL', 'EAI_NONAME', 'ENOTFOUND'].some((item) => combined.includes(item))) return 'DNS';
+  if (['ERR_TLS_', 'CERT_', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT'].some((item) => combined.includes(item))) return 'TLS';
+  if (['ECONNRESET', 'ERR_CONNECTION_RESET'].some((item) => combined.includes(item))) return 'RESET';
+  if (['ETIMEDOUT', 'ERR_TIMEOUT', 'TIMEOUT'].some((item) => combined.includes(item))) return 'TIMEOUT';
+  if (['ECONNREFUSED', 'ECONNABORTED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].some((item) => combined.includes(item))) return 'CONNECT';
+  return 'UNKNOWN';
+}
+function safeNetworkErrorDetails(error: unknown) {
+  const value = error as { name?: unknown; code?: unknown; errno?: unknown; syscall?: unknown; hostname?: unknown; cause?: { code?: unknown } } | null;
+  const cause = value?.cause;
+  return {
+    name: typeof value?.name === 'string' ? value.name : undefined,
+    code: typeof value?.code === 'string' || typeof value?.code === 'number' ? value.code : undefined,
+    cause_code: typeof cause?.code === 'string' || typeof cause?.code === 'number' ? cause.code : undefined,
+    syscall: typeof value?.syscall === 'string' ? value.syscall : undefined,
+    errno: typeof value?.errno === 'string' || typeof value?.errno === 'number' ? value.errno : undefined,
+    hostname: typeof value?.hostname === 'string' ? value.hostname : undefined,
+  };
+}
 async function requestAICredits(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  assertConfigured(); let lastError = '';
+  assertConfigured(); let lastError: unknown = undefined;
+  const requestUrl = `${AICREDITS_BASE_URL}/chat/completions`;
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const fetchStart = Date.now();
+    console.log('[ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString() }));
     try {
-      const response = await fetch(`${AICREDITS_BASE_URL}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AICREDITS_API_KEY}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal });
+      const response = await fetch(requestUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AICREDITS_API_KEY}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal });
+      const elapsedMs = Date.now() - fetchStart;
+      console.log('[ai-credits-response]', JSON.stringify({ event: 'response_received', attempt: attempt + 1, status: response.status, elapsed_ms: elapsedMs }));
       if (response.ok || (response.status !== 429 && response.status < 500)) return response;
-      lastError = `${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`;
-    } catch (error) { if (signal?.aborted) throw error; lastError = error instanceof Error ? error.message : String(error); }
+      lastError = new Error(`HTTP ${response.status}`);
+      const retryBody = await response.text().catch(() => '');
+      lastError = new Error(`${response.status}: ${retryBody.slice(0, 500)}`);
+    } catch (error) {
+      const elapsedMs = Date.now() - fetchStart;
+      const details = safeNetworkErrorDetails(error);
+      const category = classifyNetworkError(error, signal);
+      console.log('[ai-credits-network-error]', JSON.stringify({ event: 'fetch_error', attempt: attempt + 1, elapsed_ms: elapsedMs, category, ...details, signal_aborted: signal?.aborted === true }));
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
     if (attempt < 2) await sleep(350 * (2 ** attempt), signal);
   }
-  throw new Error(`AI Credits request failed after retries: ${lastError || 'unknown error'}`);
+  const finalError = new Error(`AI Credits request failed after retries: ${lastError instanceof Error ? lastError.message : String(lastError || 'unknown error')}`, { cause: lastError });
+  throw finalError;
 }
 const TOOL_UNSUPPORTED_PATTERN = /no endpoints found|support tool use|does not support tools?|tool_choice|function_call/i;
 async function getJsonCompletion(messages: ChatMessagePayload[], tools: AgentToolDefinition[], signal?: AbortSignal, forcedToolName?: string): Promise<{ message?: ChatMessagePayload; finishReason?: string }> {
@@ -29,8 +72,7 @@ async function getJsonCompletion(messages: ChatMessagePayload[], tools: AgentToo
   if (!response.ok && tools.length && TOOL_UNSUPPORTED_PATTERN.test(raw)) {
     const fallback = await requestAICredits({ model: MODEL_ID, messages, stream: false }, signal); raw = await fallback.text().catch(() => '');
     if (!fallback.ok) throw new Error(`AI Credits API returned ${fallback.status}: ${raw.slice(0, 700)}`);
-    let fallbackData: any; try { fallbackData = JSON.parse(raw); } catch { throw new Error('AI Credits returned invalid JSON.'); }
-    const fallbackChoice = fallbackData?.choices?.[0]; return { finishReason: fallbackChoice?.finish_reason, message: fallbackChoice?.message };
+    const fallbackData: any = JSON.parse(raw); const fallbackChoice = fallbackData?.choices?.[0]; return { finishReason: fallbackChoice?.finish_reason, message: fallbackChoice?.message };
   }
   if (!response.ok) throw new Error(`AI Credits API returned ${response.status}: ${raw.slice(0, 700)}`);
   let data: any; try { data = JSON.parse(raw); } catch { throw new Error('AI Credits returned invalid JSON.'); }
