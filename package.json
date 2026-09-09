@@ -3,6 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "test": "npm --prefix backend test",
+    "build": "npm run build:frontend && npm run build:backend",
     "build:frontend": "npm --prefix frontend run build",
     "build:backend": "npm --prefix backend run build"
   }
