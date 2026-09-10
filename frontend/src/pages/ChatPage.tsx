@@ -32,6 +32,42 @@ function friendlyStatus(raw: string | null): string {
   return 'Thinking';
 }
 
+function extractFirstName(
+  userProfile?: { displayName?: string | null; email?: string | null } | null,
+  firebaseUser?: { displayName?: string | null; email?: string | null } | null
+): string {
+  // 1. Try explicit displayName from user profile or auth
+  const rawDisplayName = userProfile?.displayName || firebaseUser?.displayName;
+  if (rawDisplayName && rawDisplayName.trim()) {
+    const trimmed = rawDisplayName.trim();
+    if (trimmed !== 'Abyss User' && trimmed !== 'User' && trimmed !== 'Admin') {
+      const firstWord = trimmed.split(/[\s,._-]+/)[0];
+      if (firstWord && !firstWord.includes('@')) {
+        const clean = firstWord.replace(/\d+$/, '');
+        const candidate = clean || firstWord;
+        return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+      }
+    }
+  }
+
+  // 2. Extract first name from email address
+  const email = userProfile?.email || firebaseUser?.email || '';
+  if (email && email.includes('@')) {
+    const local = email.split('@')[0].trim().toLowerCase();
+    if (local.includes('bikash')) {
+      return 'Bikash';
+    }
+    const separated = local.split(/[._\-+]/)[0] || local;
+    const noDigits = separated.replace(/\d+$/, '');
+    const candidate = noDigits || separated;
+    if (candidate) {
+      return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+    }
+  }
+
+  return '';
+}
+
 export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) => {
   const {
     messages,
@@ -61,7 +97,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     }
   }, [error, onToast, clearError]);
 
-  const { userProfile, limits } = useAuth();
+  const { userProfile, firebaseUser, limits } = useAuth();
   const chatRef = useRef<HTMLDivElement>(null);
 
   // Throttled auto-scroll that never fights the user while they read upward.
@@ -81,6 +117,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   }, [messages.length, streamingContent, thinkingText]);
 
   const userInitial = (userProfile?.displayName || userProfile?.email || 'U')[0].toUpperCase();
+  const firstName = extractFirstName(userProfile, firebaseUser);
 
   const dailyUsed = userProfile?.dailyMessageCount ?? 0;
   const dailyLimit = limits?.dailyLimit ?? 20;
@@ -98,44 +135,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 <div className="empty-brand" aria-hidden="true">
                   <AbyssLogo size={36} />
                 </div>
-                <h1 className="empty-title">What would you like to build?</h1>
-                <p className="empty-sub">
-                  Autonomous software engineering agent — from architectures and APIs to automated self-healing execution
-                </p>
-                <div className="prompt-grid">
-                  <button
-                    type="button"
-                    className="prompt-card"
-                    onClick={() => sendMessage('Build a full-stack REST API with authentication, SQLite, and automated tests')}
-                  >
-                    <span className="prompt-head">⚡ Full-Stack Architecture</span>
-                    <span className="prompt-text">Build a full-stack REST API with authentication, SQLite, and automated tests</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="prompt-card"
-                    onClick={() => sendMessage('Create an autonomous Telegram bot with command handlers and rate limiting')}
-                  >
-                    <span className="prompt-head">🤖 Bot & Automation</span>
-                    <span className="prompt-text">Create an autonomous Telegram bot with command handlers and rate limiting</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="prompt-card"
-                    onClick={() => sendMessage('Debug this runtime error and repair failing unit tests')}
-                  >
-                    <span className="prompt-head">🧪 Self-Healing Debug</span>
-                    <span className="prompt-text">Debug this runtime error and repair failing unit tests</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="prompt-card"
-                    onClick={() => sendMessage('Design and implement a responsive web application dashboard with dark mode')}
-                  >
-                    <span className="prompt-head">🌐 Web Application</span>
-                    <span className="prompt-text">Design and implement a responsive web application dashboard with dark mode</span>
-                  </button>
-                </div>
+                <h1 className="empty-title">
+                  Welcome{firstName ? `, ${firstName}` : ''}
+                </h1>
               </div>
             )}
 
