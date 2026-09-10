@@ -8,6 +8,7 @@ import { MarkdownContent } from '../components/MarkdownContent.js';
 import { ChatSkeleton } from '../components/ui.js';
 import { AgentActivity } from '../components/AgentActivity.js';
 import { TodoPanel } from '../components/TodoPanel.js';
+import { AbyssLogo } from '../components/AbyssLogo.js';
 
 interface ChatPageProps {
   onOpenSettings: () => void;
@@ -92,6 +93,52 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
 
         {!isLoadingMessages && (
           <div className="chat-inner" id="chatInner">
+            {messages.length === 0 && !isStreaming && (
+              <div className="empty" id="chatEmptyState">
+                <div className="empty-brand" aria-hidden="true">
+                  <AbyssLogo size={36} />
+                </div>
+                <h1 className="empty-title">What would you like to build?</h1>
+                <p className="empty-sub">
+                  Autonomous software engineering agent — from architectures and APIs to automated self-healing execution
+                </p>
+                <div className="prompt-grid">
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Build a full-stack REST API with authentication, SQLite, and automated tests')}
+                  >
+                    <span className="prompt-head">⚡ Full-Stack Architecture</span>
+                    <span className="prompt-text">Build a full-stack REST API with authentication, SQLite, and automated tests</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Create an autonomous Telegram bot with command handlers and rate limiting')}
+                  >
+                    <span className="prompt-head">🤖 Bot & Automation</span>
+                    <span className="prompt-text">Create an autonomous Telegram bot with command handlers and rate limiting</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Debug this runtime error and repair failing unit tests')}
+                  >
+                    <span className="prompt-head">🧪 Self-Healing Debug</span>
+                    <span className="prompt-text">Debug this runtime error and repair failing unit tests</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Design and implement a responsive web application dashboard with dark mode')}
+                  >
+                    <span className="prompt-head">🌐 Web Application</span>
+                    <span className="prompt-text">Design and implement a responsive web application dashboard with dark mode</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {messages.map((msg, index) => (
               <ChatMessageItem
                 key={msg.id || index}
@@ -110,7 +157,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
             {isStreaming && (
               <div className="message assistant">
                 <div className="msg-avatar" aria-hidden="true">
-                  A
+                  <AbyssLogo size={18} />
                 </div>
                 <div className="msg-body">
                   <div className="msg-role">AbyssGPT</div>

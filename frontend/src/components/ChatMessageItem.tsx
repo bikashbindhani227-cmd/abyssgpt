@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Clipboard, RotateCcw, Trash2, AlertTriangle } from 'lucide-react';
 import { MarkdownContent } from './MarkdownContent.js';
+import { AbyssLogo } from './AbyssLogo.js';
 import type { ChatMessage } from '../types.js';
 
 interface ChatMessageItemProps {
@@ -37,7 +38,7 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}`}>
       <div className="msg-avatar" aria-hidden="true">
-        {isUser ? userInitial : <AbyssMark />}
+        {isUser ? userInitial : <AbyssLogo size={18} />}
       </div>
       <div className="msg-body">
         <div className="msg-role">{isUser ? 'You' : 'AbyssGPT'}</div>
@@ -91,14 +92,6 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
     </div>
   );
 };
-
-/** Tiny static glyph of the Abyss mark for assistant avatars (no animation here — calm). */
-const AbyssMark: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-    <circle cx="16" cy="16" r="9.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="38 22" />
-    <circle cx="16" cy="16" r="3.6" fill="currentColor" />
-  </svg>
-);
 
 export const ChatMessageItem = React.memo(ChatMessageItemBase, (prev, next) =>
   prev.message === next.message &&

@@ -1196,13 +1196,75 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
 @keyframes rotate { to { transform: rotate(360deg); } }
 
 /* ============================================================
-   ABYSSGPT LOGO
+   ABYSSGPT ANIMATED LOGO
    ============================================================ */
-.abyss-logo { overflow: visible; flex: 0 0 auto; }
-.abyss-logo-ring { transform-origin: 16px 16px; animation: abyss-logo-spin 3.4s linear infinite; }
-.abyss-logo-core { transform-origin: 16px 16px; animation: abyss-logo-pulse 2.2s ease-in-out infinite; }
-@keyframes abyss-logo-spin { to { transform: rotate(360deg); } }
-@keyframes abyss-logo-pulse { 0%, 100% { opacity: 0.6; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
+.abyss-logo {
+  overflow: visible;
+  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: middle;
+}
+.abyss-logo-ambient {
+  transform-origin: 20px 20px;
+  animation: abyss-aura-pulse 3.8s ease-in-out infinite;
+}
+.abyss-logo-ring-outer {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-counter 20s linear infinite;
+}
+.abyss-logo-ring-main {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-spin 6s linear infinite;
+}
+.abyss-logo-ring-inner {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-counter 11s linear infinite;
+}
+.abyss-logo-spark-group {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-spin 8s linear infinite;
+}
+.abyss-logo-spark-counter {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-counter 9.5s linear infinite;
+}
+.abyss-logo-core {
+  transform-origin: 20px 20px;
+  animation: abyss-logo-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes abyss-logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes abyss-logo-counter {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+@keyframes abyss-aura-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50% { opacity: 0.8; transform: scale(1.06); }
+}
+@keyframes abyss-logo-pulse {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.abyss-logo.static .abyss-logo-ambient,
+.abyss-logo.static .abyss-logo-ring-outer,
+.abyss-logo.static .abyss-logo-ring-main,
+.abyss-logo.static .abyss-logo-ring-inner,
+.abyss-logo.static .abyss-logo-spark-group,
+.abyss-logo.static .abyss-logo-spark-counter,
+.abyss-logo.static .abyss-logo-core {
+  animation: none !important;
+}
 
 /* ============================================================
    SPLASH
@@ -1270,7 +1332,7 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .abyss-logo-ring, .abyss-logo-core, .status-dot, .skeleton { animation: none !important; }
+  .abyss-logo-ring, .abyss-logo-core, .abyss-logo-ambient, .abyss-logo-ring-outer, .abyss-logo-ring-main, .abyss-logo-ring-inner, .abyss-logo-spark-group, .abyss-logo-spark-counter, .status-dot, .skeleton { animation: none !important; }
 }
 
 /* Accessibility / crawl context: present in the document without changing the app UI. */

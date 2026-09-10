@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Menu, MoreHorizontal, PanelLeft, Plus, Crown, UserRound, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useChat } from '../contexts/ChatContext.js';
+import { AbyssLogo } from './AbyssLogo.js';
 
 interface NavbarProps {
   onToggleSidebar: () => void;
@@ -47,7 +48,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <PanelLeft size={18} />
         </button>
         <div className="top-title" title={activeConversation?.title || undefined}>
-          {activeConversation?.title || ''}
+          {activeConversation?.title ? (
+            activeConversation.title
+          ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <AbyssLogo size={16} />
+              <span>AbyssGPT</span>
+            </span>
+          )}
         </div>
       </div>
 
