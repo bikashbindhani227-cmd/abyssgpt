@@ -1,14 +1,23 @@
 import { auth } from './firebase.js';
 import type { ChatMessage } from '../types.js';
 
-const DEFAULT_API_BASE = '';
-const rawApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
-const isPlaceholder =
-  !rawApiBase ||
-  /YOUR-RENDER-BACKEND|your-backend|placeholder|example\.com/i.test(rawApiBase);
-const API_BASE = !isPlaceholder && /^https?:\/\//i.test(rawApiBase)
-  ? rawApiBase.replace(/\/$/, '')
-  : DEFAULT_API_BASE;
+const FALLBACK_PRODUCTION_API_BASE = 'https://abyssgpt-cb9k.onrender.com';
+
+function resolveApiBase(): string {
+  const rawApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+  const isPlaceholder =
+    !rawApiBase ||
+    /YOUR-RENDER-BACKEND|your-backend|placeholder|example\.com/i.test(rawApiBase);
+  if (!isPlaceholder && /^https?:\/\//i.test(rawApiBase)) {
+    return rawApiBase.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return FALLBACK_PRODUCTION_API_BASE;
+  }
+  return '';
+}
+
+const API_BASE = resolveApiBase();
 
 function getAdminToken(): string | null {
   try { return sessionStorage.getItem('abyssgpt_admin_token'); } catch { return null; }

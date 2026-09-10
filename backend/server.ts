@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { chatRouter } from './server/routes/chat.js';
 import { conversationsRouter } from './server/routes/conversations.js';
 import { userRouter } from './server/routes/user.js';
@@ -14,9 +13,7 @@ import { getAppSettingsConfig } from './server/services/configService.js';
 import { ensureFirebaseAuthSettings } from './server/config/firebaseAdmin.js';
 dotenv.config();
 
-const currentDirname = typeof __dirname !== 'undefined'
-  ? __dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+const currentDirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;

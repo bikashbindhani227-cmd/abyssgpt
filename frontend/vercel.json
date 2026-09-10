@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://abyssgpt-cb9k.onrender.com/api/:path*" },
+    { "source": "/health", "destination": "https://abyssgpt-cb9k.onrender.com/health" },
     { "source": "/admin", "destination": "/index.html" }
   ],
   "headers": [
