@@ -33,6 +33,7 @@ import { createModelAdapter, ModelError, type ChatMessagePayload } from '../serv
 import { runAgentOrchestration } from '../services/agentOrchestrator.js';
 import { buildAbyssGptSystemPrompt } from '../services/promptComposition.js';
 import { TodoManager, type Todo } from '../services/todoManager.js';
+import { ProjectStateManager } from '../services/projectState.js';
 import { parseUploads, summarizeRejections, type RawUpload } from '../services/fileUploadService.js';
 
 export const chatRouter = Router();
@@ -95,6 +96,10 @@ function createUiExecutor(
       name === 'web_search' ? String(args.query || '').slice(0, 220)
       : name === 'read_url' ? String(args.url || '').slice(0, 220)
       : name === 'run_code' ? String(args.language || 'code')
+      : name === 'run_command' ? String(args.command || 'terminal').slice(0, 120)
+      : name === 'file_write' ? String(args.path || 'file').slice(0, 120)
+      : name === 'file_read' ? String(args.path || 'file').slice(0, 120)
+      : name === 'project_state' ? String(args.action || 'state')
       : name === 'todo_write' ? `${Array.isArray(args?.todos) ? args.todos.length : 0} task${Array.isArray(args?.todos) && args.todos.length === 1 ? '' : 's'}`
       : undefined;
     if (name !== 'todo_write') {
@@ -134,6 +139,7 @@ async function runAgentStream(
 ): Promise<{ text: string; modelUsed: string }> {
   const tracker = new BudgetTracker(budgetPlan);
   const todoManager = new TodoManager();
+  const projectStateManager = new ProjectStateManager();
 
   // Stream todo updates to the client. The route already holds the SSE response.
   let lastTodoSignature = '';
@@ -149,6 +155,7 @@ async function runAgentStream(
     tracker,
     abortController.signal,
     todoManager,
+    projectStateManager,
   );
   const uiExecutor = createUiExecutor(res, budgetedExecutor, abortController.signal);
 
@@ -245,6 +252,7 @@ async function runAgentStream(
         executeTool: uiExecutor,
         plan: budgetPlan,
         tracker,
+        projectStateManager,
         signal: abortController.signal,
         forcedFirstTool:
           budgetPlan.webSearchEnabled && budgetPlan.classification.category === 'current_info'

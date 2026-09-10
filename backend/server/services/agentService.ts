@@ -1,41 +1,37 @@
 import { searchTavily } from './tavilyService.js';
 import { readUrlWithJina } from './jinaService.js';
-import { runCodeInDaytona } from './daytonaService.js';
+import { runCodeInDaytona, runCommandInDaytona, runProjectInDaytona } from './daytonaService.js';
+import { stripCodeFences } from './toolRegistry.js';
+import type { AgentToolExecutor } from './modelAdapter.js';
 import {
+  type BudgetPlan,
   BudgetTracker,
-  clampToolOutput,
   createBudgetForRequest,
   runToolWithTimeout,
-  type BudgetPlan,
+  clampToolOutput,
 } from './agentBudget.js';
 import { TodoManager, summarizeTodosForModel } from './todoManager.js';
-import { AGENT_TOOLS } from './toolRegistry.js';
-import type { AgentToolExecutor } from './aiCredits.js';
-
-// Re-export the canonical tool list for backwards compatibility.
-export { AGENT_TOOLS };
+import { ProjectStateManager } from './projectState.js';
 
 function normalizeLanguage(value: unknown): 'python' | 'javascript' | 'typescript' {
-  const raw = String(value || 'python').toLowerCase();
-  if (raw === 'js' || raw === 'javascript') return 'javascript';
+  const raw = String(value || 'python').toLowerCase().trim();
+  if (raw === 'js' || raw === 'javascript' || raw === 'node' || raw === 'nodejs') return 'javascript';
   if (raw === 'ts' || raw === 'typescript') return 'typescript';
+  if (raw === 'py' || raw === 'python' || raw === 'python3') return 'python';
   return 'python';
-}
-
-/** Models often wrap executable code in markdown fences; strip them before sandboxing. */
-function stripCodeFences(code: string): string {
-  const fence = code.match(/```(?:python|javascript|typescript|js|ts|py)?\s*\n([\s\S]*?)```/i);
-  return (fence ? fence[1] : code).trim();
 }
 
 /**
  * Raw tool implementations. Callers should normally use createBudgetedToolExecutor()
  * so every call is gated, timed, clamped, and loop-protected by the resource manager.
  *
- * `todoManager` is optional. When provided, todo_write tool calls are routed to it
- * and the route layer can subscribe to changes via todoManager.onChange().
+ * `todoManager` is optional. When provided, todo_write tool calls are routed to it.
+ * `projectStateManager` is optional. When provided, file and project state calls are handled.
  */
-export function createRawToolExecutor(todoManager?: TodoManager): AgentToolExecutor {
+export function createRawToolExecutor(
+  todoManager?: TodoManager,
+  projectStateManager?: ProjectStateManager,
+): AgentToolExecutor {
   return async (name, args) => {
     if (name === 'todo_write') {
       if (!todoManager) return 'Todo tracking is not available for this request.';
@@ -73,6 +69,93 @@ export function createRawToolExecutor(todoManager?: TodoManager): AgentToolExecu
       return output;
     }
 
+    if (name === 'run_command') {
+      const command = String(args.command || '').trim();
+      if (!command) return 'No command was provided.';
+      const timeoutSec = typeof args.timeoutSec === 'number' ? args.timeoutSec : 30;
+      let output: string | null = null;
+      if (projectStateManager && Object.keys(projectStateManager.exportManifest()).length > 0) {
+        output = await runProjectInDaytona(projectStateManager.exportManifest(), command, { timeoutSec });
+      } else {
+        output = await runCommandInDaytona(command, { timeoutSec });
+      }
+      if (output == null) throw new Error('Command execution failed or the sandbox is unavailable.');
+      return output;
+    }
+
+    if (name === 'file_write') {
+      if (!projectStateManager) return 'Project state tracking is not available for this request.';
+      const path = String(args.path || '').trim();
+      const content = String(args.content || '');
+      const purpose = typeof args.purpose === 'string' ? args.purpose : undefined;
+      const file = projectStateManager.writeFile(path, content, purpose);
+      const pending = projectStateManager.getPendingFiles();
+      return `File written: "${file.path}" (${file.size} bytes). ${pending.length ? `Remaining pending files: ${pending.join(', ')}` : 'All planned files now exist.'}`;
+    }
+
+    if (name === 'file_read') {
+      if (!projectStateManager) return 'Project state tracking is not available for this request.';
+      const path = String(args.path || '').trim();
+      const file = projectStateManager.readFile(path);
+      if (!file) {
+        const completed = projectStateManager.getCompletedFiles();
+        return `File "${path}" not found in project state. Available files: ${completed.length ? completed.join(', ') : 'none'}`;
+      }
+      return `[File: ${file.path} | Language: ${file.language} | Size: ${file.size} bytes]\n${file.content}`;
+    }
+
+    if (name === 'project_state') {
+      if (!projectStateManager) return 'Project state tracking is not available for this request.';
+      const action = String(args.action || 'get');
+      if (action === 'get') {
+        return projectStateManager.summarizeForPrompt();
+      }
+      if (action === 'update_plan') {
+        projectStateManager.updatePlan({
+          filesPlanned: Array.isArray(args.filesPlanned) ? args.filesPlanned.map(String) : undefined,
+          architectureNotes: typeof args.architectureNotes === 'string' ? args.architectureNotes : undefined,
+          framework: typeof args.framework === 'string' ? args.framework : undefined,
+          language: typeof args.language === 'string' ? args.language : undefined,
+          runtime: typeof args.runtime === 'string' ? args.runtime : undefined,
+        });
+        return `Plan updated.\n${projectStateManager.summarizeForPrompt()}`;
+      }
+      if (action === 'record_error') {
+        const error = args.error as { file?: string; command?: string; message?: string } | undefined;
+        if (error && error.message) {
+          projectStateManager.recordError({
+            file: error.file,
+            command: error.command,
+            message: error.message,
+          });
+          return `Error recorded.\n${projectStateManager.summarizeForPrompt()}`;
+        }
+        return 'No valid error message provided.';
+      }
+      if (action === 'record_fix') {
+        const fix = args.fix as { errorId?: string; file?: string; description?: string; resolved?: boolean } | undefined;
+        if (fix && fix.file && fix.description) {
+          projectStateManager.recordFix({
+            errorId: fix.errorId,
+            file: fix.file,
+            description: fix.description,
+            resolved: fix.resolved ?? true,
+          });
+          return `Fix recorded.\n${projectStateManager.summarizeForPrompt()}`;
+        }
+        return 'Fix requires "file" and "description".';
+      }
+      if (action === 'record_verification') {
+        const v = args.verification as { name?: string; status?: 'passed' | 'failed' | 'warning'; details?: string } | undefined;
+        if (v && v.name && v.status) {
+          projectStateManager.recordVerification(v.name, v.status, v.details);
+          return `Verification recorded: ${v.name} -> ${v.status}`;
+        }
+        return 'Verification requires "name" and "status".';
+      }
+      return projectStateManager.summarizeForPrompt();
+    }
+
     return `Unknown tool: ${name}`;
   };
 }
@@ -90,13 +173,14 @@ export const executeAgentTool: AgentToolExecutor = createRawToolExecutor();
  *   4. accounting               -> recordToolCall() updates loop/failure state
  *
  * `todoManager` (optional) wires the todo_write tool to a per-request TodoManager
- * so the route layer can stream `todo` events to the client.
+ * `projectStateManager` (optional) coordinates authoritative multi-file engineering state
  */
 export function createBudgetedToolExecutor(
   plan: BudgetPlan,
   tracker: BudgetTracker,
   signal?: AbortSignal,
   todoManager?: TodoManager,
+  projectStateManager?: ProjectStateManager,
 ): AgentToolExecutor {
   const budget = plan.budget;
 
@@ -107,9 +191,8 @@ export function createBudgetedToolExecutor(
       return `Resource manager blocked this tool call: ${gate.reason}. If you already have enough information, answer now; otherwise continue without this call.`;
     }
 
-    // todo_write is a metadata-only tool: it does not touch the network or
-    // sandbox, so it does not need a timeout. It still passes through budget
-    // accounting so the agent cannot spam todo updates.
+    // Metadata tools (todo_write, project_state, file_write, file_read) run in-memory
+    // without remote network latency, but still pass through budget accounting.
     if (name === 'todo_write') {
       if (!todoManager) {
         tracker.recordToolCall(name, args, false, 'todo tracking unavailable', 0);
@@ -123,7 +206,98 @@ export function createBudgetedToolExecutor(
       return clampToolOutput(summary, budget);
     }
 
-    // 2. Execute under the per-call timeout and the request-level abort signal.
+    if (name === 'file_write') {
+      if (!projectStateManager) {
+        tracker.recordToolCall(name, args, false, 'project state tracking unavailable', 0);
+        return 'Project state tracking is not available for this request.';
+      }
+      const path = String(args.path || '').trim();
+      const content = String(args.content || '');
+      const purpose = typeof args.purpose === 'string' ? args.purpose : undefined;
+      const file = projectStateManager.writeFile(path, content, purpose);
+      const pending = projectStateManager.getPendingFiles();
+      const resultMsg = `File written: "${file.path}" (${file.size} bytes). ${pending.length ? `Remaining pending files: ${pending.join(', ')}` : 'All planned files now exist.'}`;
+      tracker.recordToolCall(name, args, true, resultMsg, 0);
+      return clampToolOutput(resultMsg, budget);
+    }
+
+    if (name === 'file_read') {
+      if (!projectStateManager) {
+        tracker.recordToolCall(name, args, false, 'project state tracking unavailable', 0);
+        return 'Project state tracking is not available for this request.';
+      }
+      const path = String(args.path || '').trim();
+      const file = projectStateManager.readFile(path);
+      if (!file) {
+        const completed = projectStateManager.getCompletedFiles();
+        const msg = `File "${path}" not found. Existing files: ${completed.length ? completed.join(', ') : 'none'}`;
+        tracker.recordToolCall(name, args, false, msg, 0);
+        return clampToolOutput(msg, budget);
+      }
+      const output = `[File: ${file.path} | Size: ${file.size} bytes]\n${file.content}`;
+      tracker.recordToolCall(name, args, true, output, 0);
+      return clampToolOutput(output, budget);
+    }
+
+    if (name === 'project_state') {
+      if (!projectStateManager) {
+        tracker.recordToolCall(name, args, false, 'project state tracking unavailable', 0);
+        return 'Project state tracking is not available for this request.';
+      }
+      const action = String(args.action || 'get');
+      let out = '';
+      if (action === 'get') {
+        out = projectStateManager.summarizeForPrompt();
+      } else if (action === 'update_plan') {
+        projectStateManager.updatePlan({
+          filesPlanned: Array.isArray(args.filesPlanned) ? args.filesPlanned.map(String) : undefined,
+          architectureNotes: typeof args.architectureNotes === 'string' ? args.architectureNotes : undefined,
+          framework: typeof args.framework === 'string' ? args.framework : undefined,
+          language: typeof args.language === 'string' ? args.language : undefined,
+          runtime: typeof args.runtime === 'string' ? args.runtime : undefined,
+        });
+        out = `Plan updated.\n${projectStateManager.summarizeForPrompt()}`;
+      } else if (action === 'record_error') {
+        const error = args.error as { file?: string; command?: string; message?: string } | undefined;
+        if (error && error.message) {
+          projectStateManager.recordError({
+            file: error.file,
+            command: error.command,
+            message: error.message,
+          });
+          out = `Error recorded.\n${projectStateManager.summarizeForPrompt()}`;
+        } else {
+          out = 'No valid error message provided.';
+        }
+      } else if (action === 'record_fix') {
+        const fix = args.fix as { errorId?: string; file?: string; description?: string; resolved?: boolean } | undefined;
+        if (fix && fix.file && fix.description) {
+          projectStateManager.recordFix({
+            errorId: fix.errorId,
+            file: fix.file,
+            description: fix.description,
+            resolved: fix.resolved ?? true,
+          });
+          out = `Fix recorded.\n${projectStateManager.summarizeForPrompt()}`;
+        } else {
+          out = 'Fix requires "file" and "description".';
+        }
+      } else if (action === 'record_verification') {
+        const v = args.verification as { name?: string; status?: 'passed' | 'failed' | 'warning'; details?: string } | undefined;
+        if (v && v.name && v.status) {
+          projectStateManager.recordVerification(v.name, v.status, v.details);
+          out = `Verification recorded: ${v.name} -> ${v.status}`;
+        } else {
+          out = 'Verification requires "name" and "status".';
+        }
+      } else {
+        out = projectStateManager.summarizeForPrompt();
+      }
+      tracker.recordToolCall(name, args, true, out, 0);
+      return clampToolOutput(out, budget);
+    }
+
+    // 2. Execute external tools under the per-call timeout and request-level abort signal.
     const perCallTimeout = Math.min(budget.TOOL_TIMEOUT_MS, tracker.remainingMs > 0 ? tracker.remainingMs : budget.TOOL_TIMEOUT_MS);
     const result = await runToolWithTimeout(async () => {
       if (name === 'web_search') {
@@ -156,6 +330,20 @@ export function createBudgetedToolExecutor(
         const timeoutSec = Math.floor(budget.MAX_CODE_EXECUTION_TIME_MS / 1000);
         const output = await runCodeInDaytona(code, normalizeLanguage(args.language), { timeoutSec });
         if (output == null) throw new Error('Code execution failed or the sandbox is unavailable. Do not claim that the code was executed successfully.');
+        return output;
+      }
+
+      if (name === 'run_command') {
+        const command = String(args.command || '').trim();
+        if (!command) return 'No command was provided.';
+        const timeoutSec = Math.min(Math.floor(budget.MAX_CODE_EXECUTION_TIME_MS / 1000), 60);
+        let output: string | null = null;
+        if (projectStateManager && Object.keys(projectStateManager.exportManifest()).length > 0) {
+          output = await runProjectInDaytona(projectStateManager.exportManifest(), command, { timeoutSec });
+        } else {
+          output = await runCommandInDaytona(command, { timeoutSec });
+        }
+        if (output == null) throw new Error('Command execution failed or the sandbox is unavailable.');
         return output;
       }
 
@@ -194,49 +382,43 @@ export interface AgentContextResult {
   diagnostics: Record<string, unknown>;
 }
 
-/**
- * Classify a prompt, plan a budget, and (optionally) gather tool context under
- * full resource management. Used by background agent jobs and available to any
- * non-streaming consumer.
- */
-export async function buildAgentContext(prompt: string, allowTools = true): Promise<AgentContextResult> {
-  const plan = createBudgetForRequest(prompt);
+export async function buildAgentContext(input: string, explicitWebSearch = false): Promise<AgentContextResult> {
+  const plan = createBudgetForRequest(input, explicitWebSearch);
+  const diagnostics: Record<string, unknown> = {
+    category: plan.classification.category,
+    complexity: plan.classification.complexity,
+    signals: plan.classification.signals,
+    budget: plan.budget,
+  };
+
+  if (!plan.useAgent) {
+    return {
+      category: plan.classification.category,
+      complexity: plan.classification.complexity,
+      useAgent: false,
+      context: null,
+      diagnostics,
+    };
+  }
+
   const tracker = new BudgetTracker(plan);
-  let context: string | null = null;
+  const execute = createBudgetedToolExecutor(plan, tracker);
 
-  if (allowTools && plan.useAgent) {
-    const executor = createBudgetedToolExecutor(plan, tracker);
-    const gathered: string[] = [];
-
-    // Focused single searches/reads driven by the classification, not the model.
-    if (plan.webSearchEnabled) {
-      const query = prompt.replace(/\s+/g, ' ').trim().slice(0, 180);
-      if (tracker.canCallTool('web_search', { query }).allowed) {
-        const res = await executor('web_search', { query });
-        tracker.recordStep();
-        gathered.push(`[web_search] ${res}`);
-      }
-    }
-
-    const urls = prompt.match(/\bhttps?:\/\/[^\s<>"')]+/g) || [];
-    for (const url of urls.slice(0, 3)) {
-      if (!tracker.canCallTool('read_url', { url }).allowed) break;
-      const res = await executor('read_url', { url });
-      tracker.recordStep();
-      gathered.push(`[read_url ${url}] ${res}`);
-      if (gathered.join('').length > plan.budget.MAX_TOOL_OUTPUT_SIZE) break;
-    }
-
-    if (gathered.length) {
-      context = gathered.join('\n\n').slice(0, plan.budget.MAX_TOOL_OUTPUT_SIZE);
+  const gathered: string[] = [];
+  if (plan.forcedFirstTool === 'web_search') {
+    try {
+      const output = await execute('web_search', { query: input.slice(0, 200) });
+      gathered.push(output);
+    } catch {
+      // Background context gathering is best-effort.
     }
   }
 
   return {
     category: plan.classification.category,
     complexity: plan.classification.complexity,
-    useAgent: plan.useAgent,
-    context,
-    diagnostics: tracker.snapshot(),
+    useAgent: true,
+    context: gathered.length ? gathered.join('\n\n---\n\n') : null,
+    diagnostics: { ...diagnostics, tracker: tracker.snapshot() },
   };
 }

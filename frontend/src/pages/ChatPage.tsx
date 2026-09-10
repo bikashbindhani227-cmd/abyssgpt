@@ -22,8 +22,12 @@ function friendlyStatus(raw: string | null): string {
   const t = raw.toLowerCase();
   if (t.includes('search')) return 'Searching the web';
   if (t.includes('read')) return 'Reading sources';
-  if (t.includes('run') || t.includes('execut') || t.includes('code')) return 'Executing';
-  if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer')) return 'Writing response';
+  if (t.includes('writ') || t.includes('creat')) return 'Writing files';
+  if (t.includes('command') || t.includes('terminal')) return 'Executing commands';
+  if (t.includes('test') || t.includes('verify')) return 'Running tests';
+  if (t.includes('fix') || t.includes('repair')) return 'Fixing errors';
+  if (t.includes('run') || t.includes('execut') || t.includes('code')) return 'Executing in sandbox';
+  if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer')) return 'Finalizing answer';
   return 'Thinking';
 }
 

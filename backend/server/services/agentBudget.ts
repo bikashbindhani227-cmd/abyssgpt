@@ -61,7 +61,8 @@ const RESEARCH_RE = /\b(compare|comparison|versus|\bvs\.?\b|pros and cons|resear
 const DEPTH_RE = /\b(in[- ]depth|deep dive|comprehensive|thorough|detailed|extensive|exhaustive|complete report|full report)\b/i;
 const MULTIPART_RE = /(\?\s*\S+\?|\b(?:and also|additionally|as well as|furthermore|moreover|first.{0,40}(?:then|second|next))\b)/i;
 const CODING_RE = /\b(debug|stack ?trace|traceback|exception|error message|fix (?:this|my|the) (?:code|bug|error|function|script)|run (?:this|my|the) (?:code|script|program)|execute|compile|unit ?test|code review|refactor|optimi[sz]e (?:this|my|the) (?:code|query|function)|syntax error|typeerror|referenceerror|nullpointer|segfault|why (?:is|does) my (?:code|script|program))\b/i;
-const PROJECT_GENERATION_RE = /(?:\b(?:build|create|generate|develop|make)\b[\s\S]{0,160}\b(?:complete|entire|full[- ]stack|production[- ]ready|whole|all required|source code|project|application|app|website|files)\b|\bfull[- ]stack\b|\bentire project\b|\ball required files\b|\bcomplete source code\b|\bgenerate the (?:entire|complete|whole) (?:project|application|app|website|source code)\b|\bproduction[- ]ready (?:full[- ]stack|application|app|website|project)\b)/i;
+const PROJECT_GENERATION_RE = /(?:\b(?:build|create|generate|develop|make|implement|code|write|design)\b[\s\S]{0,160}\b(?:complete|entire|full[- ]stack|production[- ]ready|whole|all required|source code|project|application|app|website|files|bot|dashboard|service|api|cli|tool|saas|backend|frontend)\b|\bfull[- ]stack\b|\bentire project\b|\ball required files\b|\bcomplete source code\b|\bgenerate the (?:entire|complete|whole) (?:project|application|app|website|source code)\b|\bproduction[- ]ready (?:full[- ]stack|application|app|website|project)\b)/i;
+const SOFTWARE_ENGINEERING_RE = /\b(telegram bot|discord bot|\bbot\b|rest api|graphql api|\bapi\b|backend service|\bbackend\b|admin dashboard|\bdashboard\b|saas|\bcli\b|automation tool|full[- ]stack|web application|crud|sqlite|postgres|fastapi|express|flask|django|react|vite|next\.?js|dockerfile)\b/i;
 const CODE_FENCE_RE = /```[\s\S]+```/;
 const MATH_RE = /\b(calculate|compute|solve|equation|derivative|integral|matrix|probability|factorial|percentage|sqrt|log\b)/i;
 const TRIVIAL_RE = /^\s*(hi|hello|hey|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|good (?:morning|afternoon|evening)|how are you|what'?s up|bye|goodbye)\b[\s!.?]*$/i;
@@ -76,7 +77,7 @@ export function classifyRequest(message: string, explicitWebSearch = false): Tas
   const urls = text.match(URL_RE) || [];
   if (explicitWebSearch) { needsWebSearch = true; signals.push('explicit_web_search'); complexity += 1; }
   const hasFence = CODE_FENCE_RE.test(text);
-  const isProjectGeneration = PROJECT_GENERATION_RE.test(text);
+  const isProjectGeneration = PROJECT_GENERATION_RE.test(text) || (SOFTWARE_ENGINEERING_RE.test(text) && /\b(build|create|develop|make|generate|implement|code|write|setup|add)\b/i.test(text));
   if (isProjectGeneration || CODING_RE.test(text)) {
     needsCodeExecution = true;
     signals.push(isProjectGeneration ? 'full_project_generation' : 'coding_or_debug');
@@ -120,7 +121,7 @@ const TIER_PROFILES: Record<TaskCategory, ExecutionBudget> = {
   simple: { MAX_AGENT_STEPS: 2, MAX_TOOL_CALLS: 2, MAX_TOOL_OUTPUT_SIZE: 12000, TOOL_TIMEOUT_MS: 10000, TOTAL_AGENT_TIMEOUT_MS: 45000, MAX_SEARCH_RESULTS: 3, MAX_WEBPAGE_SIZE: 20000, MAX_CODE_EXECUTION_TIME_MS: 0 },
   current_info: { MAX_AGENT_STEPS: 4, MAX_TOOL_CALLS: 5, MAX_TOOL_OUTPUT_SIZE: 20000, TOOL_TIMEOUT_MS: 15000, TOTAL_AGENT_TIMEOUT_MS: 80000, MAX_SEARCH_RESULTS: 4, MAX_WEBPAGE_SIZE: 30000, MAX_CODE_EXECUTION_TIME_MS: 15000 },
   research: { MAX_AGENT_STEPS: 9, MAX_TOOL_CALLS: 12, MAX_TOOL_OUTPUT_SIZE: 30000, TOOL_TIMEOUT_MS: 25000, TOTAL_AGENT_TIMEOUT_MS: 150000, MAX_SEARCH_RESULTS: 6, MAX_WEBPAGE_SIZE: 45000, MAX_CODE_EXECUTION_TIME_MS: 30000 },
-  coding: { MAX_AGENT_STEPS: 10, MAX_TOOL_CALLS: 14, MAX_TOOL_OUTPUT_SIZE: 24000, TOOL_TIMEOUT_MS: 30000, TOTAL_AGENT_TIMEOUT_MS: 180000, MAX_SEARCH_RESULTS: 2, MAX_WEBPAGE_SIZE: 25000, MAX_CODE_EXECUTION_TIME_MS: 45000 },
+  coding: { MAX_AGENT_STEPS: 12, MAX_TOOL_CALLS: 16, MAX_TOOL_OUTPUT_SIZE: 30000, TOOL_TIMEOUT_MS: 30000, TOTAL_AGENT_TIMEOUT_MS: 180000, MAX_SEARCH_RESULTS: 4, MAX_WEBPAGE_SIZE: 30000, MAX_CODE_EXECUTION_TIME_MS: 60000 },
 };
 
 export function planBudget(classification: TaskClassification, ceilings = getServerCeilings()): BudgetPlan {
@@ -198,10 +199,11 @@ export class BudgetTracker {
     if (this.remainingMs <= 2000) return { allowed: false, reason: 'total request timeout imminent' };
     if (name === 'web_search' && !this.plan.webSearchEnabled) return { allowed: false, reason: 'web search not allocated for this task' };
     if (name === 'run_code' && !this.plan.codeExecutionEnabled) return { allowed: false, reason: 'code execution not allocated for this task' };
+    if (name === 'run_command' && !this.plan.codeExecutionEnabled) return { allowed: false, reason: 'command execution not allocated for this task' };
     if (name === 'read_url' && !this.plan.webSearchEnabled) return { allowed: false, reason: 'webpage reading not allocated for this task' };
     if (name === 'web_search' && this.searchCallsUsed >= this.budget.MAX_SEARCH_RESULTS) return { allowed: false, reason: 'search budget exhausted' };
     if (name === 'read_url' && this.webpageCallsUsed >= Math.max(2, this.budget.MAX_TOOL_CALLS - this.searchCallsUsed)) return { allowed: false, reason: 'webpage read budget exhausted' };
-    if (name === 'run_code' && this.codeExecCallsUsed >= 4) return { allowed: false, reason: 'code execution budget exhausted' };
+    if ((name === 'run_code' || name === 'run_command') && this.codeExecCallsUsed >= 6) return { allowed: false, reason: 'code/command execution budget exhausted' };
     const fp = this.fingerprint(name, args);
     const identical = this.history.filter((h) => h.fingerprint === fp).length;
     if (identical >= MAX_IDENTICAL_CALLS) { this.requestStop(`loop detected: identical ${name} call repeated ${identical + 1} times`); return { allowed: false, reason: 'duplicate call blocked (loop protection)' }; }
@@ -214,7 +216,7 @@ export class BudgetTracker {
     this.toolCallsUsed += 1; this.lastActivityAt = Date.now();
     if (name === 'web_search') this.searchCallsUsed += 1;
     if (name === 'read_url') this.webpageCallsUsed += 1;
-    if (name === 'run_code') this.codeExecCallsUsed += 1;
+    if (name === 'run_code' || name === 'run_command') this.codeExecCallsUsed += 1;
     const prev = this.history[this.history.length - 1];
     if (prev && prev.resultHash === resultHash && prev.ok && ok) this.identicalResultStreak += 1;
     else this.identicalResultStreak = ok ? 0 : this.identicalResultStreak;
