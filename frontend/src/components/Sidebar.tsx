@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight, Pencil, Search, Shield, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
+import { ChevronRight, Pencil, Search, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
@@ -9,7 +9,7 @@ interface SidebarProps {
   onCloseMobile?: () => void;
   onOpenSettings: () => void;
   onOpenPremium: () => void;
-  onOpenAdmin: () => void;
+  onOpenAdmin?: () => void;
   onLogout: () => void;
 }
 
@@ -32,7 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     renameConversation,
     deleteConversation,
   } = useChat();
-  const { userProfile, isAdmin, isPremium, logout } = useAuth();
+  const { userProfile, isPremium, logout } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
@@ -196,12 +196,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* The account card above already opens Settings, so this row only
             needs the actions that live nowhere else. */}
         <div className="sidebar-bottom-actions">
-          {isAdmin && (
-            <button onClick={onOpenAdmin}>
-              <Shield size={15} />
-              <span>Admin</span>
-            </button>
-          )}
           <button onClick={handleSignOut}>
             <LogOut size={15} />
             <span>Sign out</span>
