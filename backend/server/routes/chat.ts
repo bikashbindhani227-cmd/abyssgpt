@@ -252,7 +252,7 @@ async function runAgentStream(
             : undefined,
       });
     } else {
-      streamGenerator = streamChatCompletion(payloadMessages, abortController.signal);
+      streamGenerator = adapter.streamCompletion(payloadMessages, { signal: abortController.signal });
     }
 
     for await (const event of streamGenerator) {

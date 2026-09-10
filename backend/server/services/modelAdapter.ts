@@ -67,9 +67,19 @@ export function extractContentEmbeddedToolCall(text: string): { name: string; ar
   if (rawArgs && typeof rawArgs !== 'object') return null;
   return { name, args: (rawArgs || {}) as Record<string, unknown> };
 }
+export function formatProtocolToolCallId(rawId: string): string {
+  const clean = String(rawId || '').replace(/[^a-zA-Z0-9]/g, '');
+  if (clean.length >= 9) return clean;
+  const hash = createHash('md5').update(rawId || 'call_id').digest('hex');
+  return `call${(clean + hash).slice(0, 16)}`;
+}
+
 function normalizeToolName(rawName: unknown): string { let name = String(rawName ?? '').trim(); if (name.startsWith('functions.')) name = name.slice(10); if (name.startsWith('tools.')) name = name.slice(6); return name; }
 let syntheticCallCounter = 0;
-function syntheticToolCallId(seed: string): string { syntheticCallCounter = (syntheticCallCounter + 1) % 1000000; return `call_synth_${syntheticCallCounter}_${(seed || 'x').slice(0, 8)}`; }
+function syntheticToolCallId(seed: string): string {
+  syntheticCallCounter = (syntheticCallCounter + 1) % 1000000;
+  return `call_synth_${syntheticCallCounter}_${(seed || 'x').slice(0, 8)}`;
+}
 interface RawToolCallShape { id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown }; name?: unknown; arguments?: unknown; }
 function normalizeToolCallName(raw: RawToolCallShape): string { return raw.function && typeof raw.function === 'object' ? normalizeToolName(raw.function.name) : normalizeToolName(raw.name); }
 export function normalizeOneToolCall(raw: RawToolCallShape, index: number): NormalizedToolCall {
@@ -89,7 +99,12 @@ export function normalizeAssistantMessage(rawMessage: unknown, rawFinishReason: 
   return { text, toolCalls, finishReason, hadMalformedToolCall: hadMalformed };
 }
 
-export interface ModelAdapterConfig { modelId: string; baseUrl: string; apiKey: string; }
+export interface ModelAdapterConfig {
+  modelId: string;
+  baseUrl: string;
+  apiKey: string;
+  timeoutMs?: number;
+}
 
 export function normalizeAiCreditsBaseUrl(rawUrl?: string): string {
   let url = String(rawUrl || '').trim().replace(/\/$/, '');
@@ -107,10 +122,12 @@ export function normalizeAiCreditsBaseUrl(rawUrl?: string): string {
 }
 
 export function resolveAdapterConfigFromEnv(): ModelAdapterConfig {
+  const envTimeout = Number(process.env.AICREDITS_FETCH_TIMEOUT_MS || process.env.MODEL_TIMEOUT_MS);
   return {
     modelId: process.env.MODEL_ID?.trim() || '',
     apiKey: process.env.AICREDITS_API_KEY?.trim() || '',
     baseUrl: normalizeAiCreditsBaseUrl(process.env.AICREDITS_BASE_URL),
+    timeoutMs: Number.isFinite(envTimeout) && envTimeout > 0 ? Math.max(5_000, Math.min(Math.floor(envTimeout), 180_000)) : 60_000,
   };
 }
 export interface GenerateCompletionOptions { tools?: AgentToolDefinition[]; forcedToolName?: string; signal?: AbortSignal; }
@@ -149,11 +166,11 @@ function safeNetworkErrorDetails(error: unknown) {
     hostname: typeof value?.hostname === 'string' ? value.hostname : undefined,
   };
 }
-const AICREDITS_FETCH_TIMEOUT_MS = 10_000;
-function createFetchSignal(parentSignal?: AbortSignal): { signal: AbortSignal; timedOut: () => boolean; cleanup: () => void } {
+const DEFAULT_AICREDITS_FETCH_TIMEOUT_MS = 60_000;
+function createFetchSignal(parentSignal?: AbortSignal, timeoutMs = DEFAULT_AICREDITS_FETCH_TIMEOUT_MS): { signal: AbortSignal; timedOut: () => boolean; cleanup: () => void } {
   const controller = new AbortController();
   let didTimeout = false;
-  const timer = setTimeout(() => { didTimeout = true; controller.abort(new Error('AI Credits connection timeout')); }, AICREDITS_FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => { didTimeout = true; controller.abort(new Error('AI Credits connection timeout')); }, timeoutMs);
   const onAbort = () => controller.abort(parentSignal?.reason);
   if (parentSignal) {
     if (parentSignal.aborted) onAbort();
@@ -164,11 +181,12 @@ function createFetchSignal(parentSignal?: AbortSignal): { signal: AbortSignal; t
 async function requestChatCompletion(config: ModelAdapterConfig, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   if (!config.apiKey) throw new ModelError('not_configured', safeMessage('not_configured'), 'AICREDITS_API_KEY is not set');
   if (!config.modelId) throw new ModelError('not_configured', safeMessage('not_configured'), 'MODEL_ID is not set');
+  const timeoutMs = config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : DEFAULT_AICREDITS_FETCH_TIMEOUT_MS;
   let lastError: unknown = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const fetchStart = Date.now();
-    const fetchControl = createFetchSignal(signal);
-    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString(), timeout_ms: AICREDITS_FETCH_TIMEOUT_MS }));
+    const fetchControl = createFetchSignal(signal, timeoutMs);
+    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString(), timeout_ms: timeoutMs }));
     try {
       const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal: fetchControl.signal });
       console.log('[model-ai-credits-response]', JSON.stringify({ event: 'response_received', attempt: attempt + 1, timestamp: new Date().toISOString(), status: response.status, elapsed_ms: Date.now() - fetchStart }));
@@ -191,19 +209,64 @@ async function requestChatCompletion(config: ModelAdapterConfig, body: Record<st
   const detail = lastError instanceof Error ? lastError.message : String(lastError);
   throw new ModelError('provider_error', safeMessage('provider_error'), `AI provider request failed after retries: ${detail}`, true);
 }
-async function requestWithCapabilityFallback(config: ModelAdapterConfig, buildBody: (remove: { toolChoice: boolean }) => Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  const response = await requestChatCompletion(config, buildBody({ toolChoice: true }), signal);
-  if (!response.ok && response.status >= 400 && response.status < 500) {
+const TOOL_UNSUPPORTED_RE = /no endpoints found|support tool use|does not support tools?|tool_choice|function_call|tools.*not supported|unrecognized.*tools|disable.*tool/i;
+const SPECIFIC_NO_TOOLS_RE = /no endpoints found that support tool use|disabling|does not support tools?|tools.*not supported|unrecognized.*tools/i;
+
+async function requestWithCapabilityFallback(
+  config: ModelAdapterConfig,
+  buildBody: (capabilities: { toolChoice: boolean; tools: boolean }) => Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const response = await requestChatCompletion(config, buildBody({ toolChoice: true, tools: true }), signal);
+  if (response.ok) return response;
+
+  if (response.status >= 400 && response.status < 500) {
     const rawText = await response.text().catch(() => '');
-    if (/tool_choice|function_call|tools|function/i.test(rawText)) return requestChatCompletion(config, buildBody({ toolChoice: false }), signal);
+    if (TOOL_UNSUPPORTED_RE.test(rawText)) {
+      if (!SPECIFIC_NO_TOOLS_RE.test(rawText)) {
+        // First try removing forced tool_choice, keeping tools
+        const retry1 = await requestChatCompletion(config, buildBody({ toolChoice: false, tools: true }), signal);
+        if (retry1.ok) return retry1;
+        if (retry1.status >= 400 && retry1.status < 500) {
+          const retry1Text = await retry1.text().catch(() => '');
+          if (TOOL_UNSUPPORTED_RE.test(retry1Text)) {
+            return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal);
+          }
+          return new Response(retry1Text, { status: retry1.status, statusText: retry1.statusText, headers: retry1.headers });
+        }
+        return retry1;
+      }
+      // Provider does not support tools at all -> fallback directly to no tools
+      return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal);
+    }
     return new Response(rawText, { status: response.status, statusText: response.statusText, headers: response.headers });
   }
   return response;
 }
-function messagesForProtocol(messages: ChatMessagePayload[]): ChatMessagePayload[] {
-  return messages.map((m) => {
-    if (m.role === 'assistant' && m.tool_calls?.length) return { role: 'assistant', content: m.content || '', tool_calls: m.tool_calls.map((c) => ({ id: c.id, type: 'function' as const, function: { name: c.function.name, arguments: c.function.arguments || '{}' } })) };
-    if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id || '', content: m.content };
+function messagesForProtocol(messages: ChatMessagePayload[], options: { isStreaming?: boolean } = {}): ChatMessagePayload[] {
+  let list = messages;
+  if (options.isStreaming && list.length > 1 && list[list.length - 1].role === 'assistant') {
+    list = list.slice(0, -1);
+  }
+  return list.map((m) => {
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      return {
+        role: 'assistant',
+        content: m.content || '',
+        tool_calls: m.tool_calls.map((c) => ({
+          id: formatProtocolToolCallId(c.id),
+          type: 'function' as const,
+          function: { name: c.function.name, arguments: c.function.arguments || '{}' },
+        })),
+      };
+    }
+    if (m.role === 'tool') {
+      return {
+        role: 'tool',
+        tool_call_id: formatProtocolToolCallId(m.tool_call_id || ''),
+        content: m.content,
+      };
+    }
     return { role: m.role, content: m.content };
   });
 }
@@ -275,16 +338,27 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
   const config: ModelAdapterConfig = {
     ...rawConfig,
     baseUrl: normalizeAiCreditsBaseUrl(rawConfig.baseUrl),
+    timeoutMs: rawConfig.timeoutMs && rawConfig.timeoutMs > 0 ? rawConfig.timeoutMs : DEFAULT_AICREDITS_FETCH_TIMEOUT_MS,
   };
   async function generateCompletion(messages: ChatMessagePayload[], options: GenerateCompletionOptions = {}): Promise<NormalizedModelResponse> {
     const tools = options.tools || [];
     const protocolMessages = messagesForProtocol(messages);
-    const body = (remove: { toolChoice: boolean }): Record<string, unknown> => {
+    const body = (caps: { toolChoice: boolean; tools: boolean }): Record<string, unknown> => {
       const b: Record<string, unknown> = { model: config.modelId, messages: protocolMessages, stream: false };
-      if (tools.length) { b.tools = tools; if (remove.toolChoice) b.tool_choice = options.forcedToolName ? { type: 'function', function: { name: options.forcedToolName } } : 'auto'; }
+      if (tools.length && caps.tools) {
+        b.tools = tools;
+        if (caps.toolChoice) {
+          b.tool_choice = options.forcedToolName ? { type: 'function', function: { name: options.forcedToolName } } : 'auto';
+        }
+      }
       return b;
     };
-    let response: Response; try { response = await requestWithCapabilityFallback(config, body, options.signal); } catch (error) { throw toModelError(error, options.signal); }
+    let response: Response;
+    try {
+      response = await requestWithCapabilityFallback(config, body, options.signal);
+    } catch (error) {
+      throw toModelError(error, options.signal);
+    }
     if (!response.ok) { const rawText = await response.text().catch(() => ''); throw new ModelError('provider_error', safeMessage('provider_error'), `provider HTTP ${response.status}: ${rawText.slice(0, 500)}`, response.status >= 500 || response.status === 429); }
     const rawBody = await response.text().catch(() => ''); let data: any; try { data = JSON.parse(rawBody); } catch { throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider returned non-JSON body', true); }
     const choice = data?.choices?.[0]; if (!choice) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider response had no choices', true);
@@ -293,8 +367,18 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
   async function* streamCompletion(messages: ChatMessagePayload[], options: { signal?: AbortSignal } = {}): AsyncGenerator<StreamEvent, void, unknown> {
     let response: Response;
     try {
-      response = await requestWithCapabilityFallback(config, (remove) => { const b: Record<string, unknown> = { model: config.modelId, messages: messagesForProtocol(messages), stream: true }; if (remove.toolChoice) b.tool_choice = 'none'; return b; }, options.signal);
-    } catch (error) { throw toModelError(error, options.signal); }
+      response = await requestWithCapabilityFallback(
+        config,
+        () => ({
+          model: config.modelId,
+          messages: messagesForProtocol(messages, { isStreaming: true }),
+          stream: true,
+        }),
+        options.signal,
+      );
+    } catch (error) {
+      throw toModelError(error, options.signal);
+    }
     if (!response.ok) { const rawText = await response.text().catch(() => ''); throw new ModelError('provider_error', safeMessage('provider_error'), `provider HTTP ${response.status}: ${rawText.slice(0, 500)}`, response.status >= 500 || response.status === 429); }
     const generator = await parseStreamingResponse(response, options.signal);
     yield* generator;

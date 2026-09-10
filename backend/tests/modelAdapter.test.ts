@@ -250,6 +250,54 @@ describe('createModelAdapter.generateCompletion', () => {
     });
   });
 
+  it('degrades gracefully when the provider rejects tools entirely (404/400)', async () => {
+    let calls = 0;
+    const receivedBodies: any[] = [];
+    await withFetch(async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body || '{}'));
+      receivedBodies.push(body);
+      if (body.tools) {
+        return jsonResponse({ error: 'No endpoints found that support tool use. Try disabling "web_search"' }, 404);
+      }
+      return jsonResponse({
+        choices: [{ finish_reason: 'stop', message: { content: 'Direct text answer' } }],
+      });
+    }, async () => {
+      const adapter = createModelAdapter(CONFIG);
+      const res = await adapter.generateCompletion([{ role: 'user', content: 'hi' }], {
+        tools: [{ type: 'function', function: { name: 'web_search', description: 'd', parameters: {} } }],
+      });
+      assert.equal(calls, 2);
+      assert.equal(receivedBodies[0].tools !== undefined, true);
+      assert.equal(receivedBodies[1].tools, undefined);
+      assert.equal(res.text, 'Direct text answer');
+      assert.equal(res.toolCalls.length, 0);
+    });
+  });
+
+  it('streamCompletion omits tools and tool_choice from request body', async () => {
+    let receivedBody: any = null;
+    await withFetch(async (_url, init) => {
+      receivedBody = JSON.parse(String(init?.body || '{}'));
+      return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }, async () => {
+      const adapter = createModelAdapter(CONFIG);
+      const chunks: string[] = [];
+      for await (const ev of adapter.streamCompletion([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'draft' }])) {
+        if (ev.type === 'chunk') chunks.push(ev.text || '');
+      }
+      assert.equal(receivedBody.tools, undefined);
+      assert.equal(receivedBody.tool_choice, undefined);
+      assert.equal(receivedBody.stream, true);
+      assert.equal(receivedBody.messages.length, 1);
+      assert.equal(receivedBody.messages[0].role, 'user');
+    });
+  });
+
   it('reports not_configured as typed ModelError when MODEL_ID missing', async () => {
     const adapter = createModelAdapter({ modelId: '', baseUrl: 'https://x.test', apiKey: 'k' });
     await assert.rejects(
