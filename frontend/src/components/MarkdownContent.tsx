@@ -99,6 +99,41 @@ const markdownComponents = (onToast: (t: string) => void): Components => ({
   },
 });
 
+class MarkdownErrorBoundary extends React.Component<
+  { content: string; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { content: string; children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn('Markdown parsing issue handled safely:', error);
+  }
+
+  componentDidUpdate(prevProps: { content: string }) {
+    if (prevProps.content !== this.props.content && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="msg-content-fallback" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {this.props.content}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /**
  * Shared markdown renderer for AbyssGPT responses.
  * Used for finished messages AND the live-streaming answer so formatting
@@ -106,10 +141,14 @@ const markdownComponents = (onToast: (t: string) => void): Components => ({
  * keeping rendering XSS-safe.
  */
 const MarkdownContentBase: React.FC<MarkdownContentProps> = ({ content, onToast }) => {
+  const components = React.useMemo(() => markdownComponents(onToast), [onToast]);
+
   return (
-    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents(onToast)}>
-      {content}
-    </ReactMarkdown>
+    <MarkdownErrorBoundary content={content}>
+      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+        {content}
+      </ReactMarkdown>
+    </MarkdownErrorBoundary>
   );
 };
 

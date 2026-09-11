@@ -1,5 +1,6 @@
 import {
   ModelError,
+  safeMessage,
   type ChatMessagePayload,
   type ModelAdapter,
   type AgentToolDefinition,
@@ -179,9 +180,9 @@ async function executeToolRound(
 
 export async function* runAgentOrchestration(params: OrchestratorParams): AsyncGenerator<StreamEvent, void, unknown> {
   const { adapter, tools, executeTool, signal, projectStateManager } = params;
-  if (!tools.length) { yield* adapter.streamCompletion(params.messages, { signal }); return; }
   const resolvedPlan = params.plan || createBudgetForRequest(params.messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '');
   const tracker = params.tracker || new BudgetTracker(resolvedPlan);
+  if (!tools.length) { yield* adapter.streamCompletion(params.messages, { signal, budgetRemainingMs: tracker.remainingMs }); return; }
   const working = [...params.messages];
   const forcedFirstTool = params.forcedFirstTool ?? resolvedPlan.forcedFirstTool;
   let expandedOnce = false;
@@ -192,7 +193,7 @@ export async function* runAgentOrchestration(params: OrchestratorParams): AsyncG
   while (true) {
     if (signal?.aborted) return;
     const stepGate = tracker.canStartStep();
-    if (!stepGate.allowed) { yield { type: 'thinking', text: 'Finishing the answer…' }; yield* adapter.streamCompletion(working, { signal }); return; }
+    if (!stepGate.allowed) { yield { type: 'thinking', text: 'Finishing the answer…' }; yield* adapter.streamCompletion(working, { signal, budgetRemainingMs: tracker.remainingMs }); return; }
     tracker.recordStep();
     yield { type: 'thinking', text: tracker.stepsUsedCount === 1 ? 'Planning the best approach…' : 'Reviewing tool results…' };
     const planningMessages: ChatMessagePayload[] = [...working];
@@ -212,11 +213,20 @@ export async function* runAgentOrchestration(params: OrchestratorParams): AsyncG
       verificationNudged = false;
     }
 
-    const response = await adapter.generateCompletion(planningMessages, {
-      tools,
-      forcedToolName: tracker.stepsUsedCount === 1 ? forcedFirstTool : undefined,
-      signal,
-    });
+    let response: NormalizedModelResponse;
+    try {
+      response = await adapter.generateCompletion(planningMessages, {
+        tools,
+        forcedToolName: tracker.stepsUsedCount === 1 ? forcedFirstTool : undefined,
+        signal,
+        budgetRemainingMs: tracker.remainingMs,
+      });
+    } catch (error) {
+      const modelError = error instanceof ModelError ? error : new ModelError('provider_error', safeMessage('provider_error'), error instanceof Error ? error.message : String(error));
+      tracker.requestStop(`model error: ${modelError.code}`);
+      throw modelError;
+    }
+
     const { text, toolCalls } = response;
     if (response.hadMalformedToolCall && toolCalls.every((c) => c.invalid) && toolCalls.length > 0 && malformedRecoveriesUsed < MAX_MALFORMED_RECOVERIES) {
       malformedRecoveriesUsed += 1;
@@ -227,7 +237,7 @@ export async function* runAgentOrchestration(params: OrchestratorParams): AsyncG
     const usableCalls = toolCalls.filter((c) => !c.invalid);
     if (!usableCalls.length) {
       if (text) working.push({ role: 'assistant', content: text });
-      yield* adapter.streamCompletion(working, { signal });
+      yield* adapter.streamCompletion(working, { signal, budgetRemainingMs: tracker.remainingMs });
       return;
     }
 
@@ -252,7 +262,7 @@ export async function* runAgentOrchestration(params: OrchestratorParams): AsyncG
 
     if (round.accounted === 0) {
       yield { type: 'thinking', text: 'Wrapping up with the available information…' };
-      yield* adapter.streamCompletion(working, { signal });
+      yield* adapter.streamCompletion(working, { signal, budgetRemainingMs: tracker.remainingMs });
       return;
     }
 
@@ -265,7 +275,7 @@ export async function* runAgentOrchestration(params: OrchestratorParams): AsyncG
         continue;
       }
       yield { type: 'thinking', text: 'Finishing the answer…' };
-      yield* adapter.streamCompletion(working, { signal });
+      yield* adapter.streamCompletion(working, { signal, budgetRemainingMs: tracker.remainingMs });
       return;
     }
 

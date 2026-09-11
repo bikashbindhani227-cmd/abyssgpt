@@ -242,6 +242,7 @@ export class BudgetTracker {
     }
   }
   requestStop(reason: string): void { if (!this.forcedStop) this.forcedStop = { terminate: true, reason }; }
+  get stopReason(): string | null { return this.forcedStop?.reason ?? null; }
   shouldTerminate(): TerminationCheck {
     if (this.forcedStop) return this.forcedStop;
     if (this.stepsUsed >= this.budget.MAX_AGENT_STEPS) return { terminate: true, reason: 'agent step budget exhausted' };

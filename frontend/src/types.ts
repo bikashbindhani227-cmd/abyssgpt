@@ -36,6 +36,7 @@ export interface Conversation {
 
 export interface ChatMessage {
   id: string;
+  clientKey?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;

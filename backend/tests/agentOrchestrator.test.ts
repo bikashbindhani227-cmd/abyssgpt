@@ -15,6 +15,7 @@ import {
 } from '../server/services/agentOrchestrator.js';
 import {
   createModelAdapter,
+  ModelError,
   type ChatMessagePayload,
   type ModelAdapter,
   type NormalizedModelResponse,
@@ -421,5 +422,50 @@ describe('orchestrator guarantees', () => {
     const { events } = await collect(generator);
     const serialized = JSON.stringify(events);
     assert.ok(!serialized.includes('secret-vendor'), 'model identity must never leak into stream events');
+  });
+
+  it('immediately terminates orchestration and requests tracker stop on ModelError', async () => {
+    let attempts = 0;
+    const failingAdapter: ModelAdapter = {
+      modelId: () => 'mock-failing-model',
+      generateCompletion: async () => {
+        attempts += 1;
+        throw new ModelError('provider_error', 'The AI service returned an error. Please try again shortly.', 'Internal server error 500', false);
+      },
+      generateToolCall: async () => {
+        throw new Error('not used');
+      },
+      streamCompletion: async function* () {
+        yield { type: 'chunk', text: 'never reached' };
+      },
+    };
+
+    const plan = createBudgetForRequest('Research quantum computing');
+    const tracker = new BudgetTracker(plan);
+    const gen = runAgentOrchestration({
+      adapter: failingAdapter,
+      messages: baseMessages('Research quantum computing'),
+      tools: AGENT_TOOLS,
+      executeTool: async () => 'result',
+      plan,
+      tracker,
+    });
+
+    await assert.rejects(
+      async () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for await (const _ of gen) {
+          // iterate until error
+        }
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof ModelError);
+        assert.equal(err.code, 'provider_error');
+        return true;
+      },
+    );
+
+    assert.equal(attempts, 1, 'Orchestration must not loop when adapter throws a terminal ModelError');
+    assert.ok(tracker.stopReason?.includes('provider_error'), 'Tracker must record model error stop reason');
   });
 });

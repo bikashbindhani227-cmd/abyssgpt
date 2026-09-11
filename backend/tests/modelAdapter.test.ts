@@ -298,6 +298,46 @@ describe('createModelAdapter.generateCompletion', () => {
     });
   });
 
+  it('fails immediately without retrying on non-retryable 401/403/404 errors', async () => {
+    let callCount = 0;
+    await withFetch(async () => {
+      callCount += 1;
+      return jsonResponse({ error: 'invalid api key' }, 401);
+    }, async () => {
+      const adapter = createModelAdapter(CONFIG);
+      await assert.rejects(
+        () => adapter.generateCompletion([{ role: 'user', content: 'hi' }]),
+        (err: unknown) => {
+          assert.ok(err instanceof ModelError);
+          assert.equal(err.code, 'provider_error');
+          assert.equal(err.recoverable, false);
+          return true;
+        },
+      );
+      assert.equal(callCount, 1, '401 error should not be retried');
+    });
+  });
+
+  it('fails fast with timeout when budget remaining time is exhausted', async () => {
+    let callCount = 0;
+    await withFetch(async () => {
+      callCount += 1;
+      return jsonResponse({ choices: [{ message: { content: 'ok' } }] });
+    }, async () => {
+      const adapter = createModelAdapter(CONFIG);
+      await assert.rejects(
+        () => adapter.generateCompletion([{ role: 'user', content: 'hi' }], { budgetRemainingMs: 1200 }),
+        (err: unknown) => {
+          assert.ok(err instanceof ModelError);
+          assert.equal(err.code, 'timeout');
+          assert.equal(err.recoverable, false);
+          return true;
+        },
+      );
+      assert.equal(callCount, 0, 'No fetch should have been attempted with exhausted budget');
+    });
+  });
+
   it('reports not_configured as typed ModelError when MODEL_ID missing', async () => {
     const adapter = createModelAdapter({ modelId: '', baseUrl: 'https://x.test', apiKey: 'k' });
     await assert.rejects(

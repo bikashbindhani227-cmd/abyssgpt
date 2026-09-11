@@ -25,7 +25,7 @@ export const SAFE_MODEL_ERRORS: Record<ModelFailureCode, string> = {
   timeout: 'The request took too long to complete. Please try again.',
   aborted: 'The request was cancelled.',
 };
-const safeMessage = (code: ModelFailureCode) => SAFE_MODEL_ERRORS[code];
+export const safeMessage = (code: ModelFailureCode) => SAFE_MODEL_ERRORS[code];
 
 export function normalizeFinishReason(raw: unknown): NormalizedFinishReason {
   const value = String(raw || '').toLowerCase().trim();
@@ -130,41 +130,83 @@ export function resolveAdapterConfigFromEnv(): ModelAdapterConfig {
     timeoutMs: Number.isFinite(envTimeout) && envTimeout > 0 ? Math.max(5_000, Math.min(Math.floor(envTimeout), 180_000)) : 60_000,
   };
 }
-export interface GenerateCompletionOptions { tools?: AgentToolDefinition[]; forcedToolName?: string; signal?: AbortSignal; }
+export interface GenerateCompletionOptions {
+  tools?: AgentToolDefinition[];
+  forcedToolName?: string;
+  signal?: AbortSignal;
+  budgetRemainingMs?: number;
+}
 export interface ModelAdapter {
   modelId(): string;
   generateCompletion(messages: ChatMessagePayload[], options?: GenerateCompletionOptions): Promise<NormalizedModelResponse>;
   generateToolCall(messages: ChatMessagePayload[], toolName: string, options?: GenerateCompletionOptions): Promise<NormalizedModelResponse>;
-  streamCompletion(messages: ChatMessagePayload[], options?: { signal?: AbortSignal }): AsyncGenerator<StreamEvent, void, unknown>;
+  streamCompletion(messages: ChatMessagePayload[], options?: { signal?: AbortSignal; budgetRemainingMs?: number }): AsyncGenerator<StreamEvent, void, unknown>;
 }
-function sleep(ms: number, signal?: AbortSignal): Promise<void> { if (signal?.aborted) return Promise.resolve(); return new Promise((resolve) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); }); }
-function toModelError(err: unknown, signal?: AbortSignal): ModelError { if (signal?.aborted) return new ModelError('aborted', safeMessage('aborted'), 'request aborted by caller'); if (err instanceof ModelError) return err; return new ModelError('network', safeMessage('network'), err instanceof Error ? err.message : String(err)); }
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+function toModelError(err: unknown, signal?: AbortSignal): ModelError {
+  if (signal?.aborted) return new ModelError('aborted', safeMessage('aborted'), 'request aborted by caller');
+  if (err instanceof ModelError) return err;
+  return new ModelError('network', safeMessage('network'), err instanceof Error ? err.message : String(err));
+}
 type NetworkErrorCategory = 'DNS' | 'TLS' | 'CONNECT' | 'TIMEOUT' | 'RESET' | 'ABORT' | 'UNKNOWN';
 function classifyNetworkError(error: unknown, signal?: AbortSignal): NetworkErrorCategory {
   if (signal?.aborted) return 'ABORT';
-  const value = error as { name?: unknown; code?: unknown; cause?: { code?: unknown } } | null;
-  const name = typeof value?.name === 'string' ? value.name.toUpperCase() : '';
-  const code = typeof value?.code === 'string' ? value.code.toUpperCase() : '';
-  const causeCode = typeof value?.cause?.code === 'string' ? value.cause.code.toUpperCase() : '';
-  const combined = `${name} ${code} ${causeCode}`;
-  if (['EAI_AGAIN', 'EAI_FAIL', 'EAI_NONAME', 'ENOTFOUND'].some((item) => combined.includes(item))) return 'DNS';
-  if (['ERR_TLS_', 'CERT_', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT'].some((item) => combined.includes(item))) return 'TLS';
-  if (['ECONNRESET', 'ERR_CONNECTION_RESET'].some((item) => combined.includes(item))) return 'RESET';
-  if (['ETIMEDOUT', 'ERR_TIMEOUT', 'TIMEOUT'].some((item) => combined.includes(item))) return 'TIMEOUT';
+  const value = error as { name?: unknown; code?: unknown; message?: unknown; cause?: { code?: unknown; name?: unknown; message?: unknown } } | null;
+  const name = String(value?.name || '').toUpperCase();
+  const code = String(value?.code || '').toUpperCase();
+  const message = String(value?.message || '').toUpperCase();
+  const causeCode = String(value?.cause?.code || '').toUpperCase();
+  const causeName = String(value?.cause?.name || '').toUpperCase();
+  const causeMsg = String(value?.cause?.message || '').toUpperCase();
+  const combined = `${name} ${code} ${message} ${causeCode} ${causeName} ${causeMsg}`;
+
+  if (['EAI_AGAIN', 'EAI_FAIL', 'EAI_NONAME', 'ENOTFOUND', 'GETADDRINFO'].some((item) => combined.includes(item))) return 'DNS';
+  if (['ERR_TLS_', 'CERT_', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT', 'SSL_ERROR', 'TLS'].some((item) => combined.includes(item))) return 'TLS';
+  if (['ECONNRESET', 'ERR_CONNECTION_RESET', 'SOCKET HANG UP'].some((item) => combined.includes(item))) return 'RESET';
+  if (['ETIMEDOUT', 'ERR_TIMEOUT', 'TIMEOUT', 'ABORTED'].some((item) => combined.includes(item))) return 'TIMEOUT';
   if (['ECONNREFUSED', 'ECONNABORTED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].some((item) => combined.includes(item))) return 'CONNECT';
   return 'UNKNOWN';
 }
 function safeNetworkErrorDetails(error: unknown) {
-  const value = error as { name?: unknown; code?: unknown; errno?: unknown; syscall?: unknown; hostname?: unknown; cause?: { code?: unknown } } | null;
+  const value = error as {
+    name?: unknown;
+    code?: unknown;
+    errno?: unknown;
+    syscall?: unknown;
+    hostname?: unknown;
+    cause?: { code?: unknown; errno?: unknown; syscall?: unknown; hostname?: unknown };
+  } | null;
   const cause = value?.cause;
   return {
-    name: typeof value?.name === 'string' ? value.name : undefined,
-    code: typeof value?.code === 'string' || typeof value?.code === 'number' ? value.code : undefined,
-    cause_code: typeof cause?.code === 'string' || typeof cause?.code === 'number' ? cause.code : undefined,
-    syscall: typeof value?.syscall === 'string' ? value.syscall : undefined,
-    errno: typeof value?.errno === 'string' || typeof value?.errno === 'number' ? value.errno : undefined,
-    hostname: typeof value?.hostname === 'string' ? value.hostname : undefined,
+    error_name: typeof value?.name === 'string' ? value.name : undefined,
+    error_code: typeof value?.code === 'string' || typeof value?.code === 'number' ? value.code : undefined,
+    error_cause_code: typeof cause?.code === 'string' || typeof cause?.code === 'number' ? cause.code : undefined,
+    syscall: typeof value?.syscall === 'string' ? value.syscall : typeof cause?.syscall === 'string' ? cause.syscall : undefined,
+    errno: typeof value?.errno === 'string' || typeof value?.errno === 'number' ? value.errno : typeof cause?.errno === 'string' || typeof cause?.errno === 'number' ? cause.errno : undefined,
+    hostname: typeof value?.hostname === 'string' ? value.hostname : typeof cause?.hostname === 'string' ? cause.hostname : undefined,
   };
+}
+function getSafeHostname(urlStr: string): string {
+  try {
+    return new URL(urlStr).hostname;
+  } catch {
+    return 'unknown';
+  }
+}
+function sanitizeErrorPreview(raw: string): string {
+  return raw
+    .replace(/sk-[a-zA-Z0-9_\-]{8,}/gi, 'sk-[REDACTED]')
+    .replace(/bearer\s+[a-zA-Z0-9_\-\.]{8,}/gi, 'Bearer [REDACTED]')
+    .slice(0, 500);
 }
 const DEFAULT_AICREDITS_FETCH_TIMEOUT_MS = 60_000;
 function createFetchSignal(parentSignal?: AbortSignal, timeoutMs = DEFAULT_AICREDITS_FETCH_TIMEOUT_MS): { signal: AbortSignal; timedOut: () => boolean; cleanup: () => void } {
@@ -178,36 +220,130 @@ function createFetchSignal(parentSignal?: AbortSignal, timeoutMs = DEFAULT_AICRE
   }
   return { signal: controller.signal, timedOut: () => didTimeout, cleanup: () => { clearTimeout(timer); parentSignal?.removeEventListener('abort', onAbort); } };
 }
-async function requestChatCompletion(config: ModelAdapterConfig, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  if (!config.apiKey) throw new ModelError('not_configured', safeMessage('not_configured'), 'AICREDITS_API_KEY is not set');
-  if (!config.modelId) throw new ModelError('not_configured', safeMessage('not_configured'), 'MODEL_ID is not set');
-  const timeoutMs = config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : DEFAULT_AICREDITS_FETCH_TIMEOUT_MS;
+async function requestChatCompletion(
+  config: ModelAdapterConfig,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+  budgetRemainingMs?: number,
+): Promise<Response> {
+  if (!config.apiKey) throw new ModelError('not_configured', safeMessage('not_configured'), 'AICREDITS_API_KEY is not set', false);
+  if (!config.modelId) throw new ModelError('not_configured', safeMessage('not_configured'), 'MODEL_ID is not set', false);
+  const baseTimeoutMs = config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : DEFAULT_AICREDITS_FETCH_TIMEOUT_MS;
+  const targetHostname = getSafeHostname(config.baseUrl);
+
   let lastError: unknown = '';
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  let lastStatus: number | null = null;
+  const maxAttempts = 3;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (signal?.aborted) throw toModelError(new Error('Request aborted'), signal);
+
+    const remainingTime = budgetRemainingMs != null ? Math.max(0, budgetRemainingMs) : null;
+    if (remainingTime != null && remainingTime <= 1500) {
+      throw new ModelError('timeout', safeMessage('timeout'), 'Budget remaining time exhausted before network request', false);
+    }
+    const timeoutMs = remainingTime != null ? Math.min(baseTimeoutMs, Math.max(1_000, remainingTime - 1_000)) : baseTimeoutMs;
+
     const fetchStart = Date.now();
     const fetchControl = createFetchSignal(signal, timeoutMs);
-    console.log('[model-ai-credits-network]', JSON.stringify({ event: 'fetch_start', attempt: attempt + 1, timestamp: new Date(fetchStart).toISOString(), timeout_ms: timeoutMs }));
+
+    console.log('[model-ai-credits-network]', JSON.stringify({
+      event: 'fetch_start',
+      attempt: attempt + 1,
+      hostname: targetHostname,
+      request_start_time: new Date(fetchStart).toISOString(),
+      timeout_ms: timeoutMs,
+      budget_remaining_ms: remainingTime,
+    }));
+
     try {
-      const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, Accept: body.stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body), signal: fetchControl.signal });
-      console.log('[model-ai-credits-response]', JSON.stringify({ event: 'response_received', attempt: attempt + 1, timestamp: new Date().toISOString(), status: response.status, elapsed_ms: Date.now() - fetchStart }));
+      const response = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+          Accept: body.stream ? 'text/event-stream' : 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: fetchControl.signal,
+      });
+
+      const fetchEnd = Date.now();
+      const elapsedMs = fetchEnd - fetchStart;
+      lastStatus = response.status;
+
+      console.log('[model-ai-credits-response]', JSON.stringify({
+        event: 'response_received',
+        attempt: attempt + 1,
+        hostname: targetHostname,
+        request_start_time: new Date(fetchStart).toISOString(),
+        request_end_time: new Date(fetchEnd).toISOString(),
+        elapsed_ms: elapsedMs,
+        status: response.status,
+        status_text: response.statusText,
+        budget_remaining_ms: remainingTime != null ? Math.max(0, remainingTime - elapsedMs) : null,
+      }));
+
       if (response.ok || (response.status !== 429 && response.status < 500)) return response;
+
       const rawError = await response.text().catch(() => '');
+      const bodyPreview = sanitizeErrorPreview(rawError);
       lastError = `${response.status}: ${rawError.slice(0, 700)}`;
-      if (response.status === 429) throw new ModelError('rate_limited', safeMessage('rate_limited'), `provider 429: ${lastError}`, true);
+
+      if (response.status === 401 || response.status === 403) {
+        throw new ModelError('provider_error', safeMessage('provider_error'), `provider auth failure ${response.status}: ${bodyPreview}`, false);
+      }
+      if (response.status === 404) {
+        throw new ModelError('provider_error', safeMessage('provider_error'), `provider endpoint not found 404: ${bodyPreview}`, false);
+      }
+      if (response.status === 429) {
+        lastError = new ModelError('rate_limited', safeMessage('rate_limited'), `provider 429: ${lastError}`, true);
+      }
     } catch (error) {
+      const fetchEnd = Date.now();
+      const elapsedMs = fetchEnd - fetchStart;
       const timedOut = fetchControl.timedOut();
-      const effectiveError = timedOut && !signal?.aborted ? Object.assign(new Error('AI Credits connection timed out'), { code: 'ETIMEDOUT' }) : error;
-      console.log('[model-ai-credits-network-error]', JSON.stringify({ event: 'fetch_error', attempt: attempt + 1, timestamp: new Date().toISOString(), elapsed_ms: Date.now() - fetchStart, category: timedOut ? 'TIMEOUT' : classifyNetworkError(effectiveError, signal), ...safeNetworkErrorDetails(effectiveError), signal_aborted: Boolean(signal?.aborted), timeout_triggered: timedOut }));
+      const effectiveError = timedOut && !signal?.aborted
+        ? Object.assign(new Error('AI Credits connection timed out'), { code: 'ETIMEDOUT' })
+        : error;
+
+      const details = safeNetworkErrorDetails(effectiveError);
+      const category = timedOut ? 'TIMEOUT' : classifyNetworkError(effectiveError, signal);
+
+      console.log('[model-ai-credits-network-error]', JSON.stringify({
+        event: 'fetch_error',
+        attempt: attempt + 1,
+        hostname: details.hostname || targetHostname,
+        request_start_time: new Date(fetchStart).toISOString(),
+        request_end_time: new Date(fetchEnd).toISOString(),
+        elapsed_ms: elapsedMs,
+        status: lastStatus,
+        category,
+        budget_remaining_ms: remainingTime != null ? Math.max(0, remainingTime - elapsedMs) : null,
+        signal_aborted: Boolean(signal?.aborted),
+        timeout_triggered: timedOut,
+        ...details,
+      }));
+
       if (signal?.aborted) throw toModelError(error, signal);
-      if (error instanceof ModelError) throw error;
+      if (error instanceof ModelError && !error.recoverable) throw error;
       lastError = effectiveError;
     } finally {
       fetchControl.cleanup();
     }
-    if (attempt < 2) await sleep(350 * (2 ** attempt), signal);
+
+    if (attempt < maxAttempts - 1) {
+      const backoffMs = 350 * (2 ** attempt);
+      if (remainingTime != null && remainingTime <= backoffMs + 2000) {
+        break;
+      }
+      await sleep(backoffMs, signal);
+    }
   }
+
   const detail = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new ModelError('provider_error', safeMessage('provider_error'), `AI provider request failed after retries: ${detail}`, true);
+  const finalCode = lastStatus === 429 ? 'rate_limited' : 'provider_error';
+  throw new ModelError(finalCode, safeMessage(finalCode), `AI provider request failed after retries: ${detail}`, false);
 }
 const TOOL_UNSUPPORTED_RE = /no endpoints found|support tool use|does not support tools?|tool_choice|function_call|tools.*not supported|unrecognized.*tools|disable.*tool/i;
 const SPECIFIC_NO_TOOLS_RE = /no endpoints found that support tool use|disabling|does not support tools?|tools.*not supported|unrecognized.*tools/i;
@@ -216,8 +352,9 @@ async function requestWithCapabilityFallback(
   config: ModelAdapterConfig,
   buildBody: (capabilities: { toolChoice: boolean; tools: boolean }) => Record<string, unknown>,
   signal?: AbortSignal,
+  budgetRemainingMs?: number,
 ): Promise<Response> {
-  const response = await requestChatCompletion(config, buildBody({ toolChoice: true, tools: true }), signal);
+  const response = await requestChatCompletion(config, buildBody({ toolChoice: true, tools: true }), signal, budgetRemainingMs);
   if (response.ok) return response;
 
   if (response.status >= 400 && response.status < 500) {
@@ -225,19 +362,19 @@ async function requestWithCapabilityFallback(
     if (TOOL_UNSUPPORTED_RE.test(rawText)) {
       if (!SPECIFIC_NO_TOOLS_RE.test(rawText)) {
         // First try removing forced tool_choice, keeping tools
-        const retry1 = await requestChatCompletion(config, buildBody({ toolChoice: false, tools: true }), signal);
+        const retry1 = await requestChatCompletion(config, buildBody({ toolChoice: false, tools: true }), signal, budgetRemainingMs);
         if (retry1.ok) return retry1;
         if (retry1.status >= 400 && retry1.status < 500) {
           const retry1Text = await retry1.text().catch(() => '');
           if (TOOL_UNSUPPORTED_RE.test(retry1Text)) {
-            return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal);
+            return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal, budgetRemainingMs);
           }
           return new Response(retry1Text, { status: retry1.status, statusText: retry1.statusText, headers: retry1.headers });
         }
         return retry1;
       }
       // Provider does not support tools at all -> fallback directly to no tools
-      return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal);
+      return requestChatCompletion(config, buildBody({ toolChoice: false, tools: false }), signal, budgetRemainingMs);
     }
     return new Response(rawText, { status: response.status, statusText: response.statusText, headers: response.headers });
   }
@@ -355,7 +492,7 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
     };
     let response: Response;
     try {
-      response = await requestWithCapabilityFallback(config, body, options.signal);
+      response = await requestWithCapabilityFallback(config, body, options.signal, options.budgetRemainingMs);
     } catch (error) {
       throw toModelError(error, options.signal);
     }
@@ -364,7 +501,7 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
     const choice = data?.choices?.[0]; if (!choice) throw new ModelError('invalid_response', safeMessage('invalid_response'), 'provider response had no choices', true);
     return normalizeAssistantMessage(choice.message, choice.finish_reason);
   }
-  async function* streamCompletion(messages: ChatMessagePayload[], options: { signal?: AbortSignal } = {}): AsyncGenerator<StreamEvent, void, unknown> {
+  async function* streamCompletion(messages: ChatMessagePayload[], options: { signal?: AbortSignal; budgetRemainingMs?: number } = {}): AsyncGenerator<StreamEvent, void, unknown> {
     let response: Response;
     try {
       response = await requestWithCapabilityFallback(
@@ -375,6 +512,7 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
           stream: true,
         }),
         options.signal,
+        options.budgetRemainingMs,
       );
     } catch (error) {
       throw toModelError(error, options.signal);

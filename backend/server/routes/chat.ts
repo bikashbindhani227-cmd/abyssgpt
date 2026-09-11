@@ -260,7 +260,7 @@ async function runAgentStream(
             : undefined,
       });
     } else {
-      streamGenerator = adapter.streamCompletion(payloadMessages, { signal: abortController.signal });
+      streamGenerator = adapter.streamCompletion(payloadMessages, { signal: abortController.signal, budgetRemainingMs: tracker.remainingMs });
     }
 
     for await (const event of streamGenerator) {

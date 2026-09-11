@@ -4,32 +4,13 @@ import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { ChatMessageItem } from '../components/ChatMessageItem.js';
 import { ChatComposer } from '../components/ChatComposer.js';
-import { MarkdownContent } from '../components/MarkdownContent.js';
 import { ChatSkeleton } from '../components/ui.js';
-import { AgentActivity } from '../components/AgentActivity.js';
-import { TodoPanel } from '../components/TodoPanel.js';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 
 interface ChatPageProps {
   onOpenSettings: () => void;
   onOpenPremium: () => void;
   onToast: (text: string) => void;
-}
-
-/** Map internal progress events to calm, user-facing status labels.
- *  Never exposes provider or tool implementation names. */
-function friendlyStatus(raw: string | null): string {
-  if (!raw) return 'Thinking';
-  const t = raw.toLowerCase();
-  if (t.includes('search')) return 'Searching the web';
-  if (t.includes('read')) return 'Reading sources';
-  if (t.includes('writ') || t.includes('creat')) return 'Writing files';
-  if (t.includes('command') || t.includes('terminal')) return 'Executing commands';
-  if (t.includes('test') || t.includes('verify')) return 'Running tests';
-  if (t.includes('fix') || t.includes('repair')) return 'Fixing errors';
-  if (t.includes('run') || t.includes('execut') || t.includes('code')) return 'Executing in sandbox';
-  if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer')) return 'Finalizing answer';
-  return 'Thinking';
 }
 
 function extractFirstName(
@@ -72,7 +53,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   const {
     messages,
     isStreaming,
-    streamingContent,
     thinkingText,
     agentActivity,
     agentStartedAt,
@@ -104,17 +84,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   const lastScrollAt = useRef(0);
   useEffect(() => {
     const now = performance.now();
-    if (now - lastScrollAt.current < 120) return;
+    if (now - lastScrollAt.current < 80) return;
     const scroller = chatRef.current;
     if (!scroller) return;
     const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distanceFromBottom > 220 && streamingContent) return;
+    if (distanceFromBottom > 160 && isStreaming) return;
     lastScrollAt.current = now;
     const id = window.requestAnimationFrame(() => {
-      scroller.scrollTop = scroller.scrollHeight;
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight;
+      }
     });
     return () => window.cancelAnimationFrame(id);
-  }, [messages.length, streamingContent, thinkingText]);
+  }, [messages, isStreaming]);
 
   const userInitial = (userProfile?.displayName || userProfile?.email || 'U')[0].toUpperCase();
   const firstName = extractFirstName(userProfile, firebaseUser);
@@ -126,9 +108,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   return (
     <>
       <section className="chat" id="chat" ref={chatRef} aria-label="Conversation">
-        {isLoadingMessages && <ChatSkeleton />}
+        {isLoadingMessages && messages.length === 0 && <ChatSkeleton />}
 
-        {!isLoadingMessages && (
+        {(!isLoadingMessages || messages.length > 0) && (
           <div className="chat-inner" id="chatInner">
             {messages.length === 0 && !isStreaming && (
               <div className="empty" id="chatEmptyState">
@@ -141,68 +123,32 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
               </div>
             )}
 
-            {messages.map((msg, index) => (
-              <ChatMessageItem
-                key={msg.id || index}
-                message={msg}
-                userInitial={userInitial}
-                onRegenerate={
-                  index === messages.length - 1 && msg.role === 'assistant' && !isStreaming
-                    ? regenerateMessage
-                    : undefined
-                }
-                onDelete={msg.isError ? undefined : deleteMessageItem}
-                onToast={onToast}
-              />
-            ))}
+            {messages.map((msg, index) => {
+              const isLastAssistant = msg.role === 'assistant' && index === messages.length - 1;
+              const isCurrentStreaming = isStreaming && isLastAssistant;
 
-            {isStreaming && (
-              <div className="message assistant">
-                <div className="msg-avatar" aria-hidden="true">
-                  <AbyssLogo size={18} />
-                </div>
-                <div className="msg-body">
-                  <div className="msg-role">AbyssGPT</div>
-                  {activeAttachments.length > 0 && (
-                    <div className="composer-attachments" style={{ padding: 0, marginBottom: 6 }}>
-                      {activeAttachments.map((att, idx) => (
-                        <div
-                          key={`${att.filename}-${idx}`}
-                          className={`attachment-chip${att.rejected ? ' attachment-rejected' : ''}`}
-                          title={att.rejected ? att.rejectionReason : att.filename}
-                        >
-                          <span className="attachment-icon">
-                            {att.rejected || !att.hasTextContent ? '⚠' : '📄'}
-                          </span>
-                          <span className="attachment-name">{att.filename}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {activeTodos.length > 0 && <TodoPanel todos={activeTodos} />}
-                  <AgentActivity
-                    items={agentActivity}
-                    isStreaming={isStreaming}
-                    startedAt={agentStartedAt}
-                    finishedAt={agentFinishedAt}
-                  />
-                  {/* Pre-first-token progress states; once content arrives the
-                      caret itself signals ongoing generation (calmer, no dupes). */}
-                  {!streamingContent && (
-                    <div className="status-line" role="status" aria-live="polite">
-                      <span className="status-dot" aria-hidden="true" />
-                      <span>{friendlyStatus(thinkingText)}</span>
-                    </div>
-                  )}
-                  {streamingContent && (
-                    <div className="msg-content streaming-text">
-                      <MarkdownContent content={streamingContent} onToast={onToast} />
-                      <span className="stream-caret" aria-hidden="true" />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+              return (
+                <ChatMessageItem
+                  key={msg.clientKey || msg.id}
+                  message={msg}
+                  userInitial={userInitial}
+                  isStreaming={isCurrentStreaming}
+                  thinkingText={isCurrentStreaming ? thinkingText : null}
+                  activeAttachments={isCurrentStreaming ? activeAttachments : undefined}
+                  activeTodos={isCurrentStreaming ? activeTodos : undefined}
+                  agentActivity={isLastAssistant ? agentActivity : undefined}
+                  agentStartedAt={isLastAssistant ? agentStartedAt : undefined}
+                  agentFinishedAt={isLastAssistant ? agentFinishedAt : undefined}
+                  onRegenerate={
+                    isLastAssistant && !isStreaming
+                      ? regenerateMessage
+                      : undefined
+                  }
+                  onDelete={msg.isError ? undefined : deleteMessageItem}
+                  onToast={onToast}
+                />
+              );
+            })}
 
             {isLimitReached && !isStreaming && (
               <div className="inline-error" role="status" style={{ marginBottom: 8 }}>

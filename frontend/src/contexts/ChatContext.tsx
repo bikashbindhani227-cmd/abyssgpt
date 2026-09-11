@@ -85,13 +85,26 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const streamBufferRef = useRef('');
   const streamTextRef = useRef('');
   const streamFlushTimerRef = useRef<number | null>(null);
+  const loadedConvIdRef = useRef<string | null>(null);
+  const streamingMsgIdRef = useRef<string | null>(null);
 
   const flushStreamBuffer = useCallback(() => {
     streamFlushTimerRef.current = null;
     const next = streamBufferRef.current;
     if (!next) return;
     streamBufferRef.current = '';
-    setStreamingContent((prev) => prev + next);
+    const fullText = streamTextRef.current;
+    setStreamingContent(fullText);
+    const targetId = streamingMsgIdRef.current;
+    if (targetId) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientKey === targetId || m.id === targetId
+            ? { ...m, content: fullText }
+            : m
+        )
+      );
+    }
   }, []);
 
   const queueStreamChunk = useCallback((chunk: string) => {
@@ -99,7 +112,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     streamBufferRef.current += chunk;
     if (streamFlushTimerRef.current === null) {
       // Batch stream updates to keep React rendering smooth on mobile.
-      streamFlushTimerRef.current = window.setTimeout(flushStreamBuffer, 110);
+      streamFlushTimerRef.current = window.setTimeout(flushStreamBuffer, 60);
     }
   }, [flushStreamBuffer]);
 
@@ -131,7 +144,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [firebaseUser, activeConversationId]);
+  }, [firebaseUser]);
 
   useEffect(() => {
     loadConversations();
@@ -140,11 +153,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Load messages when activeConversationId changes
   useEffect(() => {
     if (!firebaseUser || !activeConversationId) {
+      loadedConvIdRef.current = null;
       setMessages([]);
+      setIsLoadingMessages(false);
       return;
     }
 
-    if (isStreaming) {
+    // If this conversation's messages are already loaded in memory, do not re-fetch
+    // and do not trigger a skeleton flash.
+    if (loadedConvIdRef.current === activeConversationId) {
       return;
     }
 
@@ -154,6 +171,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     apiRequest<ChatMessage[]>(`/api/conversations/${activeConversationId}/messages`)
       .then((data) => {
         if (isMounted) {
+          loadedConvIdRef.current = activeConversationId;
           // Merge server truth with unsaved local messages (optimistic user
           // message, error bubble) so a failed or stopped exchange doesn't
           // silently vanish from the conversation.
@@ -182,12 +200,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [firebaseUser, activeConversationId, isStreaming]);
+  }, [firebaseUser, activeConversationId]);
 
   const selectConversation = (id: string | null) => {
     if (isStreaming) {
       stopGenerating();
     }
+    if (id === activeConversationId) return;
+    loadedConvIdRef.current = null;
+    setMessages([]);
     setActiveConversationId(id);
     setError(null);
   };
@@ -203,8 +224,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ title: 'New Chat' }),
       });
       setConversations((prev) => [newConv, ...prev]);
-      setActiveConversationId(newConv.id);
+      loadedConvIdRef.current = newConv.id;
       setMessages([]);
+      setActiveConversationId(newConv.id);
+      setIsLoadingMessages(false);
       return newConv.id;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create new chat';
@@ -242,15 +265,34 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const stopGenerating = () => {
-    clearStreamQueue();
+    flushStreamBuffer();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    const finalText = streamTextRef.current;
+    const target = streamingMsgIdRef.current;
+    if (target) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientKey === target || m.id === target
+            ? { ...m, content: finalText || m.content }
+            : m
+        )
+      );
+    }
     setIsStreaming(false);
+    setStreamingContent('');
     setThinkingText(null);
-    setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now(), title: 'Stopped' } : x));
+    setAgentActivity((prev) =>
+      prev.map((x) =>
+        x.status === 'running'
+          ? { ...x, status: 'done' as const, completedAt: Date.now(), title: 'Stopped' }
+          : x
+      )
+    );
     setAgentFinishedAt(Date.now());
+    streamingMsgIdRef.current = null;
   };
 
   // Human-friendly wording for stream-level failures. Never leaks
@@ -277,19 +319,38 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Show a retryable inline error bubble in the conversation instead of
   // leaving the user with only a transient toast.
-  const pushErrorBubble = useCallback((raw: string, partialContent: string) => {
+  const pushErrorBubble = useCallback((raw: string, partialContent: string, targetMsgId?: string | null) => {
     const text = friendlyStreamError(raw);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: 'local-error-' + Date.now(),
-        role: 'assistant',
-        content: partialContent,
-        createdAt: new Date().toISOString(),
-        isError: true,
-        errorText: text,
-      },
-    ]);
+    const target = targetMsgId || streamingMsgIdRef.current;
+    setMessages((prev) => {
+      if (target) {
+        const found = prev.some((m) => m.clientKey === target || m.id === target);
+        if (found) {
+          return prev.map((m) =>
+            m.clientKey === target || m.id === target
+              ? {
+                  ...m,
+                  content: partialContent || m.content,
+                  isError: true,
+                  errorText: text,
+                }
+              : m
+          );
+        }
+      }
+      return [
+        ...prev,
+        {
+          id: 'local-error-' + Date.now(),
+          clientKey: 'local-error-' + Date.now(),
+          role: 'assistant',
+          content: partialContent,
+          createdAt: new Date().toISOString(),
+          isError: true,
+          errorText: text,
+        },
+      ];
+    });
   }, []);
 
   const sendMessage = async (text: string, attachments?: PendingAttachment[]) => {
@@ -299,16 +360,29 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanText = text.trim();
     let currentConvId = activeConversationId;
 
-    // Optimistic user message preview
-    const tempUserMsgId = 'temp-' + Date.now();
+    // Create optimistic user message AND optimistic assistant message immediately
+    // with stable clientKeys.
+    const userMsgId = 'user-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const assistantMsgId = 'asst-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
     const optimisticUserMsg: ChatMessage = {
-      id: tempUserMsgId,
+      id: userMsgId,
+      clientKey: userMsgId,
       role: 'user',
       content: cleanText,
       createdAt: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, optimisticUserMsg]);
+    const optimisticAssistantMsg: ChatMessage = {
+      id: assistantMsgId,
+      clientKey: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+    };
+
+    streamingMsgIdRef.current = assistantMsgId;
+    setMessages((prev) => [...prev, optimisticUserMsg, optimisticAssistantMsg]);
     setIsStreaming(true);
     clearStreamQueue();
     setStreamingContent('');
@@ -354,7 +428,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onMeta: (meta) => {
             if (meta.conversationId && meta.conversationId !== currentConvId) {
               currentConvId = meta.conversationId;
+              loadedConvIdRef.current = meta.conversationId;
               setActiveConversationId(meta.conversationId);
+            }
+            if (meta.userMessage?.id) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.clientKey === userMsgId ? { ...m, id: meta.userMessage.id } : m
+                )
+              );
             }
           },
           onThinking: (th) => {
@@ -385,51 +467,57 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             queueStreamChunk(chunk);
           },
           onDone: async (data) => {
-            // Flush any final buffered characters synchronously before leaving streaming mode.
+            // Flush any final buffered characters synchronously
             if (streamFlushTimerRef.current !== null) {
               window.clearTimeout(streamFlushTimerRef.current);
               streamFlushTimerRef.current = null;
             }
             streamBufferRef.current = '';
             const finalText = streamTextRef.current;
+            const target = streamingMsgIdRef.current || assistantMsgId;
+
+            // Commit final content in-place. The clientKey never changes,
+            // so the rendered DOM element stays untouched.
+            setMessages((prev) =>
+              prev.map((m) =>
+                (m.clientKey === target || m.id === target)
+                  ? {
+                      ...m,
+                      id: data?.messageId || m.id,
+                      content: finalText || m.content,
+                      model: data?.model || m.model,
+                    }
+                  : m
+              )
+            );
 
             setIsStreaming(false);
+            setStreamingContent('');
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
             setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
+            streamingMsgIdRef.current = null;
 
-            // Put the completed assistant message into the UI immediately; do not wait for Firestore.
-            if (currentConvId && data?.messageId) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: data.messageId,
-                  role: 'assistant',
-                  content: finalText,
-                  createdAt: new Date().toISOString(),
-                  model: data.model,
-                } as ChatMessage,
-              ]);
-            }
-            setStreamingContent('');
-
-            // Refresh metadata in the background; never block the visible answer.
+            // Refresh metadata in the background; UI finalization and persistence
+            // are decoupled so the visible answer never disappears or re-fetches.
             void loadConversations();
             void refreshProfile();
-            if (currentConvId) {
-              void apiRequest<ChatMessage[]>(`/api/conversations/${currentConvId}/messages`)
-                .then((updated) => setMessages(updated))
-                .catch(() => {});
-            }
           },
           onError: (errMsg) => {
+            if (streamFlushTimerRef.current !== null) {
+              window.clearTimeout(streamFlushTimerRef.current);
+              streamFlushTimerRef.current = null;
+            }
+            streamBufferRef.current = '';
             setIsStreaming(false);
+            setStreamingContent('');
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'error' as const, completedAt: Date.now() } : x));
             setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
-            pushErrorBubble(errMsg, streamTextRef.current);
+            pushErrorBubble(errMsg, streamTextRef.current, assistantMsgId);
+            streamingMsgIdRef.current = null;
           },
         },
         abortController.signal
@@ -437,13 +525,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: unknown) {
       clearStreamQueue();
       setIsStreaming(false);
+      setStreamingContent('');
       setThinkingText(null);
       setAgentFinishedAt(Date.now());
       abortControllerRef.current = null;
       pushErrorBubble(
         err instanceof Error ? err.message : 'Message failed to send.',
-        streamTextRef.current
+        streamTextRef.current,
+        assistantMsgId
       );
+      streamingMsgIdRef.current = null;
     }
   };
 
@@ -455,17 +546,30 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
     if (!lastUserMsg) return;
 
-    // Remove any trailing assistant message visually
+    const assistantMsgId = 'regen-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
+    // Replace any trailing assistant message with a fresh streaming assistant message
     setMessages((prev) => {
-      if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
-        return prev.slice(0, -1);
-      }
-      return prev;
+      const base = prev.length > 0 && prev[prev.length - 1].role === 'assistant'
+        ? prev.slice(0, -1)
+        : prev;
+      return [
+        ...base,
+        {
+          id: assistantMsgId,
+          clientKey: assistantMsgId,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+        },
+      ];
     });
 
+    streamingMsgIdRef.current = assistantMsgId;
     setIsStreaming(true);
     clearStreamQueue();
     setStreamingContent('');
+    streamTextRef.current = '';
     setThinkingText('Planning the task…');
     setAgentActivity([]);
     setAgentStartedAt(Date.now());
@@ -500,26 +604,51 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setThinkingText(null);
             queueStreamChunk(chunk);
           },
-          onDone: async () => {
-            flushStreamBuffer();
+          onDone: async (data?: { messageId?: string; model?: string }) => {
+            if (streamFlushTimerRef.current !== null) {
+              window.clearTimeout(streamFlushTimerRef.current);
+              streamFlushTimerRef.current = null;
+            }
+            streamBufferRef.current = '';
+            const finalText = streamTextRef.current;
+            const target = streamingMsgIdRef.current || assistantMsgId;
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                (m.clientKey === target || m.id === target)
+                  ? {
+                      ...m,
+                      id: data?.messageId || m.id,
+                      content: finalText || m.content,
+                      model: data?.model || m.model,
+                    }
+                  : m
+              )
+            );
+
             setIsStreaming(false);
+            setStreamingContent('');
             setThinkingText(null);
             setAgentActivity((prev) => prev.map((x) => x.status === 'running' ? { ...x, status: 'done' as const, completedAt: Date.now() } : x));
             setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
-            refreshProfile();
-            const updated = await apiRequest<ChatMessage[]>(
-              `/api/conversations/${activeConversationId}/messages`
-            );
-            setMessages(updated);
-            setStreamingContent('');
+            streamingMsgIdRef.current = null;
+            void refreshProfile();
+            void loadConversations();
           },
           onError: (errMsg) => {
+            if (streamFlushTimerRef.current !== null) {
+              window.clearTimeout(streamFlushTimerRef.current);
+              streamFlushTimerRef.current = null;
+            }
+            streamBufferRef.current = '';
             setIsStreaming(false);
+            setStreamingContent('');
             setThinkingText(null);
             setAgentFinishedAt(Date.now());
             abortControllerRef.current = null;
-            pushErrorBubble(errMsg, streamTextRef.current);
+            pushErrorBubble(errMsg, streamTextRef.current, assistantMsgId);
+            streamingMsgIdRef.current = null;
           },
         },
         abortController.signal
@@ -527,10 +656,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: unknown) {
       clearStreamQueue();
       setIsStreaming(false);
+      setStreamingContent('');
       setThinkingText(null);
       setAgentFinishedAt(Date.now());
       abortControllerRef.current = null;
-      pushErrorBubble(err instanceof Error ? err.message : 'Regeneration failed.', streamTextRef.current);
+      pushErrorBubble(err instanceof Error ? err.message : 'Regeneration failed.', streamTextRef.current, assistantMsgId);
+      streamingMsgIdRef.current = null;
     }
   };
 
@@ -551,6 +682,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await apiRequest(`/api/conversations/${id}`, { method: 'DELETE' });
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (activeConversationId === id) {
+        loadedConvIdRef.current = null;
         setActiveConversationId(null);
         setMessages([]);
       }
