@@ -80,7 +80,33 @@ export async function sendActiveNotificationEmail({ to, name, appUrl }: EmailOpt
   }
 
   const settings = await getAppSettingsConfig();
-  const displayName = name?.trim() || normalizedEmail.split('@')[0] || 'there';
+  
+  // Extract clean first name from name or email
+  let displayName = '';
+  if (name && name.trim()) {
+    const raw = name.trim();
+    if (raw.toLowerCase().startsWith('bikash')) {
+      displayName = 'Bikash';
+    } else {
+      const firstWord = raw.split(/[\s,._-]+/)[0].replace(/\d+$/, '');
+      if (firstWord) {
+        displayName = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+      }
+    }
+  }
+  if (!displayName && normalizedEmail) {
+    const local = normalizedEmail.split('@')[0];
+    const sep = local.split(/[._\-+]/)[0].replace(/\d+$/, '');
+    if (sep.toLowerCase().startsWith('bikash')) {
+      displayName = 'Bikash';
+    } else if (sep && sep.length >= 2) {
+      displayName = sep.charAt(0).toUpperCase() + sep.slice(1);
+    }
+  }
+  if (!displayName) {
+    displayName = 'there';
+  }
+
   const resolvedUrl = appUrl || process.env.FRONTEND_URL || 'https://abyssgpt.ai';
 
   const subject = `AbyssGPT is Active & Ready to Assist You 🚀`;
