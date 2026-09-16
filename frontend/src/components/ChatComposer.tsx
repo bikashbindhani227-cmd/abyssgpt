@@ -47,6 +47,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     pendingAttachments,
     addAttachment,
     removeAttachment,
+    agentActivity,
     agentStartedAt,
     agentFinishedAt,
   } = useChat();
@@ -106,7 +107,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   }, [addAttachment]);
 
   const canSend = (Boolean(text.trim()) || pendingAttachments.length > 0) && !disabled;
-  const isAgentMode = isStreaming || (agentStartedAt !== null && agentFinishedAt === null);
+  const isAgentMode = (agentStartedAt !== null && agentFinishedAt === null) || Boolean(agentActivity && agentActivity.length > 0);
 
   return (
     <div className="composer-wrap">

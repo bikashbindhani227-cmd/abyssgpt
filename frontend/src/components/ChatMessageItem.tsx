@@ -23,21 +23,6 @@ interface ChatMessageItemProps {
   onToast: (text: string) => void;
 }
 
-function friendlyStatus(raw: string | null): string {
-  if (!raw) return 'Thinking…';
-  const t = raw.toLowerCase();
-  if (t.includes('search')) return 'Searching the web…';
-  if (t.includes('read')) return 'Reading sources…';
-  if (t.includes('writ') || t.includes('creat')) return 'Writing files…';
-  if (t.includes('command') || t.includes('terminal')) return 'Executing commands…';
-  if (t.includes('test') || t.includes('verify')) return 'Running tests…';
-  if (t.includes('fix') || t.includes('repair')) return 'Fixing errors…';
-  if (t.includes('run') || t.includes('execut') || t.includes('code')) return 'Running code…';
-  if (t.includes('finish') || t.includes('wrap') || t.includes('review') || t.includes('answer')) return 'Finalizing answer…';
-  if (t.includes('plan') || t.includes('approach') || t.includes('task')) return 'Planning the task…';
-  return raw;
-}
-
 export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
   message,
   userInitial = 'U',
@@ -68,19 +53,24 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
 
   const hasAttachments = !isUser && activeAttachments && activeAttachments.length > 0;
   const hasTodos = !isUser && activeTodos && activeTodos.length > 0;
-  const hasActivity = !isUser && agentActivity && agentActivity.length > 0;
-  const isPendingFirstToken = !isUser && isStreaming && !message.content;
+  const hasActivity = !isUser && (
+    (Boolean(agentActivity && agentActivity.length > 0)) ||
+    Boolean(thinkingText)
+  );
 
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}`}>
-      <div className="msg-avatar" aria-hidden="true">
-        {isUser ? userInitial : <AbyssLogo size={18} />}
-      </div>
+      {!isUser && (
+        <div className="msg-avatar" aria-hidden="true">
+          <AbyssLogo size={20} />
+        </div>
+      )}
+
       <div className="msg-body">
         <div className="msg-role">{isUser ? 'You' : 'AbyssGPT'}</div>
 
         {hasAttachments && (
-          <div className="composer-attachments" style={{ padding: 0, marginBottom: 6 }}>
+          <div className="composer-attachments" style={{ padding: 0, marginBottom: 8 }}>
             {activeAttachments.map((att, idx) => (
               <div
                 key={`${att.filename}-${idx}`}
@@ -100,28 +90,29 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
 
         {hasActivity && (
           <AgentActivity
-            items={agentActivity}
+            items={agentActivity || []}
             isStreaming={isStreaming}
             startedAt={agentStartedAt ?? null}
             finishedAt={agentFinishedAt ?? null}
+            thinkingText={thinkingText}
+            onToast={onToast}
           />
         )}
 
-        {isPendingFirstToken && (
-          <div className="status-line" role="status" aria-live="polite">
-            <span className="status-dot" aria-hidden="true" />
-            <span>{friendlyStatus(thinkingText || null)}</span>
-          </div>
-        )}
-
-        {(Boolean(message.content) || (!isStreaming && !isPendingFirstToken)) && (
+        {(Boolean(message.content) || isStreaming) && (
           <div className="msg-content">
             {isUser ? (
               message.content
-            ) : (
+            ) : message.content ? (
               <MarkdownContent content={message.content} onToast={onToast} />
-            )}
-            {isStreaming && <span className="stream-caret" aria-hidden="true" />}
+            ) : isStreaming && !hasActivity ? (
+              <span className="inline-flex items-center gap-1.5 py-1" aria-label="Thinking">
+                <span className="typing-dot" style={{ animation: 'caretblink 1s ease-in-out infinite' }} />
+                <span className="typing-dot" style={{ animation: 'caretblink 1s ease-in-out infinite 0.2s' }} />
+                <span className="typing-dot" style={{ animation: 'caretblink 1s ease-in-out infinite 0.4s' }} />
+              </span>
+            ) : null}
+            {isStreaming && Boolean(message.content) && <span className="stream-caret" aria-hidden="true" />}
           </div>
         )}
 
@@ -133,12 +124,17 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
               title="Copy message"
               aria-label={copied ? 'Copied' : 'Copy message'}
             >
-              {copied ? <Check size={15} /> : <Clipboard size={15} />}
+              {copied ? <Check size={14} className="text-emerald-400" /> : <Clipboard size={14} />}
             </button>
 
             {!isUser && onRegenerate && (
-              <button type="button" onClick={onRegenerate} title="Regenerate response" aria-label="Regenerate response">
-                <RotateCcw size={15} />
+              <button
+                type="button"
+                onClick={onRegenerate}
+                title="Regenerate response"
+                aria-label="Regenerate response"
+              >
+                <RotateCcw size={14} />
               </button>
             )}
 
@@ -150,7 +146,7 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
                 aria-label="Delete message"
                 className="danger"
               >
-                <Trash2 size={15} />
+                <Trash2 size={14} />
               </button>
             )}
           </div>
@@ -169,6 +165,12 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
           </div>
         )}
       </div>
+
+      {isUser && (
+        <div className="msg-avatar user-avatar-pill" aria-hidden="true">
+          {userInitial}
+        </div>
+      )}
     </div>
   );
 };

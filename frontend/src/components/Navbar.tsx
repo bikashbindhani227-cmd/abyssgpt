@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, MoreHorizontal, PanelLeft, Plus, Crown, UserRound, LogOut } from 'lucide-react';
+import { Menu, MoreHorizontal, PanelLeft, Plus, Crown, UserRound, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useChat } from '../contexts/ChatContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
@@ -17,7 +17,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenAccount,
 }) => {
-  const { isPremium, logout } = useAuth();
+  const { isPremium, isAdmin, logout } = useAuth();
   const { activeConversation, createNewChat } = useChat();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -88,6 +88,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button role="menuitem" onClick={() => { setShowMenu(false); onOpenAccount(); }}>
               <UserRound size={15} /> Account & Settings
             </button>
+            {isAdmin && (
+              <button role="menuitem" onClick={() => { setShowMenu(false); onOpenAdmin(); }}>
+                <ShieldCheck size={15} className="text-cyan-400" /> Admin Dashboard
+              </button>
+            )}
             <div className="top-menu-sep" />
             <button role="menuitem" className="danger" onClick={() => { setShowMenu(false); logout(); }}>
               <LogOut size={15} /> Sign out

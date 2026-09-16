@@ -87,8 +87,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
     <div className="splash p-4 sm:p-6">
       <div className="card w-full max-w-md p-7 sm:p-9 shadow-md">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-line-strong bg-surface shadow-sm">
-            <AbyssLogo size={26} />
+          <div className="mx-auto mb-4 grid place-items-center">
+            <AbyssLogo size={32} />
           </div>
           <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight text-ink">Create an account</h1>
           <p className="mt-1.5 text-[13px] text-ink-3">Start chatting with AbyssGPT</p>

@@ -17,32 +17,41 @@ function extractFirstName(
   userProfile?: { displayName?: string | null; email?: string | null } | null,
   firebaseUser?: { displayName?: string | null; email?: string | null } | null
 ): string {
-  // 1. Try explicit displayName from user profile or auth
-  const rawDisplayName = userProfile?.displayName || firebaseUser?.displayName;
-  if (rawDisplayName && rawDisplayName.trim()) {
-    const trimmed = rawDisplayName.trim();
-    if (trimmed !== 'Abyss User' && trimmed !== 'User' && trimmed !== 'Admin') {
-      const firstWord = trimmed.split(/[\s,._-]+/)[0];
-      if (firstWord && !firstWord.includes('@')) {
-        const clean = firstWord.replace(/\d+$/, '');
-        const candidate = clean || firstWord;
-        return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+  const email = (userProfile?.email || firebaseUser?.email || '').trim().toLowerCase();
+  if (email) {
+    const local = email.split('@')[0];
+    if (local.startsWith('bikash')) {
+      return 'Bikash';
+    }
+  }
+
+  const rawDisplayName = (userProfile?.displayName || firebaseUser?.displayName || '').trim();
+  if (rawDisplayName && !['Abyss User', 'User', 'Admin', 'Anonymous'].includes(rawDisplayName)) {
+    if (rawDisplayName.toLowerCase().startsWith('bikash')) {
+      return 'Bikash';
+    }
+    const firstWord = rawDisplayName.split(/[\s,._-]+/)[0];
+    if (firstWord && !firstWord.includes('@')) {
+      const clean = firstWord.replace(/\d+$/, '');
+      if (clean.toLowerCase().startsWith('bikash')) {
+        return 'Bikash';
+      }
+      if (clean.length >= 2) {
+        return clean.charAt(0).toUpperCase() + clean.slice(1);
       }
     }
   }
 
-  // 2. Extract first name from email address
-  const email = userProfile?.email || firebaseUser?.email || '';
   if (email && email.includes('@')) {
-    const local = email.split('@')[0].trim().toLowerCase();
-    if (local.includes('bikash')) {
-      return 'Bikash';
+    const local = email.split('@')[0];
+    const separatorPart = local.split(/[._\-+]/)[0];
+    const cleanSep = (separatorPart || '').replace(/\d+$/, '');
+    if (cleanSep && cleanSep.length >= 2) {
+      return cleanSep.charAt(0).toUpperCase() + cleanSep.slice(1);
     }
-    const separated = local.split(/[._\-+]/)[0] || local;
-    const noDigits = separated.replace(/\d+$/, '');
-    const candidate = noDigits || separated;
-    if (candidate) {
-      return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+    const noDigits = local.replace(/\d+$/, '');
+    if (noDigits && noDigits.length >= 2) {
+      return noDigits.charAt(0).toUpperCase() + noDigits.slice(1);
     }
   }
 
@@ -68,8 +77,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     deleteMessageItem,
   } = useChat();
 
-  // Conversation-level failures (rename, delete, load) surface as toasts;
-  // stream failures surface as inline retryable bubbles (see ChatContext).
   useEffect(() => {
     if (error) {
       onToast(error);
@@ -80,7 +87,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   const { userProfile, firebaseUser, limits } = useAuth();
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Throttled auto-scroll that never fights the user while they read upward.
   const lastScrollAt = useRef(0);
   useEffect(() => {
     const now = performance.now();
@@ -115,11 +121,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
             {messages.length === 0 && !isStreaming && (
               <div className="empty" id="chatEmptyState">
                 <div className="empty-brand" aria-hidden="true">
-                  <AbyssLogo size={36} />
+                  <AbyssLogo size={52} />
                 </div>
                 <h1 className="empty-title">
                   Welcome{firstName ? `, ${firstName}` : ''}
                 </h1>
+                <p className="empty-subtitle">
+                  How can I help you today?
+                </p>
               </div>
             )}
 

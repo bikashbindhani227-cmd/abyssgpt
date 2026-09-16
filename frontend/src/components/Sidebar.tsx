@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { ChevronRight, Pencil, Search, Sparkles, Trash2, X, LogOut, FilePlus2 } from 'lucide-react';
+import {
+  ChevronRight,
+  Pencil,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+  LogOut,
+  FilePlus2,
+  ShieldCheck,
+} from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
@@ -32,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     renameConversation,
     deleteConversation,
   } = useChat();
-  const { userProfile, isPremium, logout } = useAuth();
+  const { userProfile, isPremium, isAdmin, logout } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
@@ -118,48 +128,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
               const active = conv.id === activeConversationId;
               const editing = editingId === conv.id;
               return (
-                <div
-                  key={conv.id}
-                  className={`conv-row ${active ? 'active' : ''}`}
-                  onClick={() => {
-                    if (!editing) {
-                      selectConversation(conv.id);
-                      onCloseMobile?.();
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if ((e.key === 'Enter' || e.key === ' ') && !editing) {
-                      e.preventDefault();
-                      selectConversation(conv.id);
-                      onCloseMobile?.();
-                    }
-                  }}
-                  aria-current={active ? 'true' : undefined}
-                >
+                <div key={conv.id} className={`conv-item${active ? ' active' : ''}`}>
                   {editing ? (
                     <input
-                      autoFocus
+                      type="text"
+                      className="conv-edit-input"
                       value={editingTitle}
-                      aria-label="Rename conversation"
                       onChange={(e) => setEditingTitle(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => handleSaveRename(conv.id, e)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleSaveRename(conv.id, e);
                         if (e.key === 'Escape') setEditingId(null);
                       }}
-                      onBlur={(e) => handleSaveRename(conv.id, e)}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span>{conv.title || 'New chat'}</span>
+                    <button
+                      className="conv-row"
+                      onClick={() => {
+                        selectConversation(conv.id);
+                        onCloseMobile?.();
+                      }}
+                    >
+                      <span className="conv-title">{conv.title}</span>
+                    </button>
                   )}
+
                   {!editing && (
-                    <div className="conv-row-actions">
-                      <button onClick={(e) => handleStartRename(conv.id, conv.title, e)} aria-label={`Rename "${conv.title}"`}>
+                    <div className="conv-actions">
+                      <button
+                        onClick={(e) => handleStartRename(conv.id, conv.title, e)}
+                        title="Rename"
+                        aria-label="Rename conversation"
+                      >
                         <Pencil size={13} />
                       </button>
-                      <button onClick={(e) => handleDelete(conv.id, e)} aria-label={`Delete "${conv.title}"`} className="danger">
+                      <button
+                        onClick={(e) => handleDelete(conv.id, e)}
+                        title="Delete"
+                        aria-label="Delete conversation"
+                        className="danger"
+                      >
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -171,6 +181,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="sidebar-spacer" />
+
+        {isAdmin && onOpenAdmin && (
+          <button
+            className="sidebar-admin-btn"
+            onClick={() => {
+              onOpenAdmin();
+              onCloseMobile?.();
+            }}
+          >
+            <ShieldCheck size={16} />
+            <span>Admin Dashboard</span>
+          </button>
+        )}
 
         <button className={`upgrade-card${isPremium ? ' pro' : ''}`} onClick={onOpenPremium}>
           <div>
@@ -193,8 +216,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ChevronRight size={16} className="account-chevron" />
         </button>
 
-        {/* The account card above already opens Settings, so this row only
-            needs the actions that live nowhere else. */}
         <div className="sidebar-bottom-actions">
           <button onClick={handleSignOut}>
             <LogOut size={15} />

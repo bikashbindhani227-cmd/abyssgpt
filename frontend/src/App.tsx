@@ -64,8 +64,8 @@ const AppContent: React.FC = () => {
     return (
       <div className="splash">
         <div className="flex flex-col items-center text-center">
-          <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-line-strong bg-surface shadow-sm">
-            <AbyssLogo size={26} />
+          <div className="mb-4 grid place-items-center">
+            <AbyssLogo size={32} />
           </div>
           <h1 className="mb-1 text-xl font-bold tracking-tight text-ink">AbyssGPT</h1>
           <p className="text-xs font-medium text-ink-3">Loading your conversations…</p>

@@ -74,8 +74,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthenticated, onBackT
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="grid h-11 w-11 place-items-center rounded-2xl border border-line-strong bg-surface">
-            <AbyssLogo size={22} />
+          <div className="grid place-items-center">
+            <AbyssLogo size={28} />
           </div>
           <div className="w-9" />
         </div>

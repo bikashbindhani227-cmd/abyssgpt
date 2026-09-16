@@ -387,9 +387,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearStreamQueue();
     setStreamingContent('');
     streamTextRef.current = '';
-    setThinkingText('Planning the task…');
+    setThinkingText(null);
     setAgentActivity([]);
-    setAgentStartedAt(Date.now());
+    setAgentStartedAt(null);
     setAgentFinishedAt(null);
     setActiveTodos([]);
     setActiveAttachments([]);
@@ -441,9 +441,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           onThinking: (th) => {
             setThinkingText(th);
+            setAgentStartedAt((prev) => prev ?? Date.now());
             startActivity(th);
           },
           onTool: (toolEvent) => {
+            setAgentStartedAt((prev) => prev ?? Date.now());
             const map = { web_search: ['search', 'Searching the web'], read_url: ['read', 'Reading sources'], run_code: ['code', 'Running code'] } as const;
             const resolved = map[toolEvent.tool as keyof typeof map] || ['tool', 'Running the tool'];
             setAgentActivity((prev) => {
@@ -570,9 +572,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearStreamQueue();
     setStreamingContent('');
     streamTextRef.current = '';
-    setThinkingText('Planning the task…');
+    setThinkingText(null);
     setAgentActivity([]);
-    setAgentStartedAt(Date.now());
+    setAgentStartedAt(null);
     setAgentFinishedAt(null);
     setActiveTodos([]);
     setActiveAttachments([]);
@@ -587,8 +589,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           conversationId: activeConversationId,
         },
         {
-          onThinking: (th) => { setThinkingText(th); startActivity(th); },
+          onThinking: (th) => {
+            setThinkingText(th);
+            setAgentStartedAt((prev) => prev ?? Date.now());
+            startActivity(th);
+          },
           onTool: (toolEvent) => {
+            setAgentStartedAt((prev) => prev ?? Date.now());
             const resolved = toolEvent.tool === 'web_search' ? ['search', 'Searching the web'] : toolEvent.tool === 'read_url' ? ['read', 'Reading sources'] : toolEvent.tool === 'run_code' ? ['code', 'Running code'] : ['tool', 'Running the tool'];
             setAgentActivity((prev) => {
               const running = prev.find((x) => x.status === 'running' && (x.tool === resolved[0] || x.tool === 'tool'));
