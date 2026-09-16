@@ -563,7 +563,33 @@ a { color: inherit; }
   background: transparent;
   border: none;
   box-shadow: none;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+.empty-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.09);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #34d399;
+  font-size: 12.5px;
+  font-weight: 550;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+.empty-active-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: activeGlow 2s infinite ease-in-out;
+}
+@keyframes activeGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
 }
 .empty-title {
   font-size: clamp(26px, 5vw, 33px);

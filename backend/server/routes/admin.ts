@@ -20,6 +20,7 @@ import {
   resetUserDailyUsage,
   setUserCustomLimits,
 } from '../services/userService.js';
+import { getEmailConfigDetails, sendTestEmail, sendActiveNotificationEmail } from '../services/emailService.js';
 import type { UserProfile, AdminDashboardStats } from '../../types.js';
 
 export const adminRouter = Router();
@@ -388,3 +389,60 @@ adminRouter.put('/settings', async (req: AuthenticatedRequest, res: Response): P
     res.status(500).json({ error: errorMsg });
   }
 });
+
+// Email Service Status
+adminRouter.get('/email-status', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const status = getEmailConfigDetails();
+    res.json(status);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to get email status';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Send Test Email
+adminRouter.post('/send-test-email', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const targetEmail = req.body?.email || req.user?.email;
+    if (!targetEmail || typeof targetEmail !== 'string') {
+      res.status(400).json({ error: 'Recipient email is required' });
+      return;
+    }
+    const result = await sendTestEmail(targetEmail);
+    res.json(result);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to send test email';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Broadcast "I am active" message to all registered users
+adminRouter.post('/broadcast-active', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const users = await getAllUsers();
+    const origin = req.get('origin') || req.get('referer') || '';
+    const results: Array<{ email: string; success: boolean; message: string }> = [];
+
+    // Filter valid emails
+    const validUsers = users.filter((u) => u.email && u.email.includes('@') && !u.isBanned);
+    for (const u of validUsers.slice(0, 50)) {
+      const resSend = await sendActiveNotificationEmail({
+        to: u.email,
+        name: u.displayName,
+        appUrl: origin,
+      });
+      results.push({ email: u.email, success: resSend.success, message: resSend.message });
+    }
+
+    res.json({
+      totalUsers: validUsers.length,
+      processed: results.length,
+      results,
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to broadcast active email';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+

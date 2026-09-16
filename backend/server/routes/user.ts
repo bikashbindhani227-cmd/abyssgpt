@@ -5,6 +5,8 @@ import { getAppLimitsConfig, getAppSettingsConfig } from '../services/configServ
 import { calculateEffectiveLimits } from '../services/userService.js';
 import { persistentStorage } from '../services/storage.js';
 import { adminDb } from '../config/firebaseAdmin.js';
+import { sendActiveNotificationEmail } from '../services/emailService.js';
+import { listConversations, createConversation, addMessage } from '../services/conversationService.js';
 import type { UserProfile } from '../../types.js';
 
 const hasServiceAccount = Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL);
@@ -88,3 +90,50 @@ userRouter.get(
     }
   }
 );
+
+// Trigger automatic proactive greeting and "I am active" notification email
+userRouter.post(
+  '/notify-active',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const origin = req.get('origin') || req.get('referer') || '';
+
+      // 1. Dispatch email notification in background
+      let emailResult = { success: true, delivered: false, message: 'Skipped' };
+      if (user.email) {
+        emailResult = await sendActiveNotificationEmail({
+          to: user.email,
+          name: user.displayName,
+          appUrl: origin,
+        });
+      }
+
+      // 2. Check if user needs a proactive welcome conversation
+      let welcomeConvId: string | null = null;
+      try {
+        const convs = await listConversations(user.uid);
+        if (convs.length === 0) {
+          const welcomeConv = await createConversation(user.uid, 'Welcome to AbyssGPT 👋');
+          const greetingText = `Hello ${user.displayName || 'there'}! 👋 I am active, online, and ready to assist you.\n\nYou can ask me anything — from writing and debugging code to researching any topic, drafting documents, or brainstorming ideas. What would you like to build or explore today?`;
+          await addMessage(user.uid, welcomeConv.id, 'assistant', greetingText);
+          welcomeConvId = welcomeConv.id;
+        }
+      } catch (convErr) {
+        console.warn('Could not create initial welcome conversation:', convErr);
+      }
+
+      res.json({
+        success: true,
+        email: emailResult,
+        welcomeConversationId: welcomeConvId,
+        message: 'Active notification processed.',
+      });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to process active notification';
+      res.status(500).json({ error: errorMsg });
+    }
+  }
+);
+

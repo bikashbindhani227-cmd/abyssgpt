@@ -34,6 +34,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateDisplayName: (name: string) => Promise<void>;
+  notifyActiveSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,11 +82,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchProfile(auth.currentUser);
   }, [fetchProfile]);
 
+  const notifyActiveSession = useCallback(async () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const sessionKey = `abyss_active_notified_${uid}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+    try {
+      sessionStorage.setItem(sessionKey, '1');
+      await apiRequest('/api/user/notify-active', { method: 'POST' });
+    } catch (err) {
+      console.warn('Could not complete active session notification:', err);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {
         await fetchProfile(user);
+        // Trigger automatic "I am active" notifications (email & welcome chat)
+        const sessionKey = `abyss_active_notified_${user.uid}`;
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, '1');
+          apiRequest('/api/user/notify-active', { method: 'POST' }).catch(() => {});
+        }
       } else {
         setUserProfile(null);
         setLimits(null);
@@ -153,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendPasswordReset,
         refreshProfile,
         updateDisplayName,
+        notifyActiveSession,
       }}
     >
       {children}

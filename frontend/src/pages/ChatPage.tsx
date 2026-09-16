@@ -123,12 +123,72 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 <div className="empty-brand" aria-hidden="true">
                   <AbyssLogo size={52} />
                 </div>
+
+                <div className="empty-active-pill" id="activeStatusPill">
+                  <span className="empty-active-dot" aria-hidden="true" />
+                  <span>AbyssGPT is active &amp; ready to assist you</span>
+                </div>
+
                 <h1 className="empty-title">
                   Welcome{firstName ? `, ${firstName}` : ''}
                 </h1>
-                <p className="empty-subtitle">
-                  How can I help you today?
+                <p className="empty-sub max-w-lg">
+                  I am active, online, and ready to assist you. Ask me anything, or choose a topic below to begin right away:
                 </p>
+
+                <div className="prompt-grid" id="welcomePromptGrid">
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Can you help me write and review code for my project?')}
+                  >
+                    <div className="prompt-head">
+                      <span>💻 Code &amp; Debug</span>
+                    </div>
+                    <div className="prompt-text">
+                      Write clean functions, debug errors, or review your code architecture.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Search the live web and summarize the latest updates in AI and technology.')}
+                  >
+                    <div className="prompt-head">
+                      <span>🌐 Live Web Search</span>
+                    </div>
+                    <div className="prompt-text">
+                      Retrieve live web facts, source citations, and current real-world data.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Help me brainstorm creative project ideas and create a structured roadmap.')}
+                  >
+                    <div className="prompt-head">
+                      <span>💡 Brainstorm &amp; Plan</span>
+                    </div>
+                    <div className="prompt-text">
+                      Turn an idea into a step-by-step action plan and feature roadmap.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="prompt-card"
+                    onClick={() => sendMessage('Draft a professional, well-structured document or email for me.')}
+                  >
+                    <div className="prompt-head">
+                      <span>✍️ Write &amp; Polish</span>
+                    </div>
+                    <div className="prompt-text">
+                      Draft emails, technical docs, essays, or refined copy in any tone.
+                    </div>
+                  </button>
+                </div>
               </div>
             )}
 

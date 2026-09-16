@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Send, AlertCircle, Info, Check } from 'lucide-react';
+import { AlertTriangle, Send, AlertCircle, Info, Check, Mail, Radio } from 'lucide-react';
 import { apiRequest } from '../../lib/api.js';
 import { SectionCard, Skeleton, Spinner, Toggle } from '../../components/ui.js';
 import type { AppConfig } from '../../types.js';
+
+interface EmailStatus {
+  configured: boolean;
+  host: string;
+  user: string;
+  from: string;
+}
 
 export const AdminSettings: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>({
@@ -19,12 +26,67 @@ export const AdminSettings: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{ success: boolean; message: string } | null>(null);
+
   useEffect(() => {
-    apiRequest<AppConfig>('/api/admin/settings')
-      .then((data) => setConfig(data))
+    Promise.all([
+      apiRequest<AppConfig>('/api/admin/settings').then((data) => setConfig(data)),
+      apiRequest<EmailStatus>('/api/admin/email-status').then((status) => setEmailStatus(status)).catch(() => {}),
+    ])
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load settings'))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleSendTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testEmail || !testEmail.includes('@')) {
+      setTestResult({ success: false, message: 'Please enter a valid email address.' });
+      return;
+    }
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>('/api/admin/send-test-email', {
+        method: 'POST',
+        body: JSON.stringify({ email: testEmail }),
+      });
+      setTestResult(res);
+    } catch (err: unknown) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to dispatch test email',
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
+  const handleBroadcastActive = async () => {
+    if (!window.confirm('Broadcast an "I am active" notification email to all registered users now?')) return;
+    setBroadcasting(true);
+    setBroadcastResult(null);
+    try {
+      const res = await apiRequest<{ totalUsers: number; processed: number }>('/api/admin/broadcast-active', {
+        method: 'POST',
+      });
+      setBroadcastResult({
+        success: true,
+        message: `Dispatched active notification to ${res.processed} of ${res.totalUsers} registered users.`,
+      });
+    } catch (err: unknown) {
+      setBroadcastResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to broadcast active notification',
+      });
+    } finally {
+      setBroadcasting(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,6 +218,98 @@ export const AdminSettings: React.FC = () => {
                 />
               </div>
               <p className="field-hint">Where users go for manual activation</p>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title={
+            <span className="flex items-center gap-2">
+              <Mail size={15} style={{ color: 'var(--accent)' }} />
+              <span>Automatic Active Notifications &amp; Email Dispatch</span>
+            </span>
+          }
+          description="When users log in, AbyssGPT automatically greets them in-app and sends an email notification in English letting them know it is active and ready to assist them."
+          action={
+            <span className={`badge ${emailStatus?.configured ? 'badge-success' : 'badge-warning'}`}>
+              {emailStatus?.configured ? 'SMTP Online' : 'Simulation Mode'}
+            </span>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-surface-2 p-3.5 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-ink">SMTP Status:</span>
+                <span className={emailStatus?.configured ? 'text-emerald-400 font-medium' : 'text-amber-400 font-medium'}>
+                  {emailStatus?.configured ? 'Connected & Active' : 'Awaiting SMTP Env Config (Logging to Console)'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-ink-3">
+                <span>SMTP Host:</span>
+                <span className="font-mono">{emailStatus?.host || 'Not configured'}</span>
+              </div>
+              <div className="flex items-center justify-between text-ink-3">
+                <span>Sender From:</span>
+                <span className="font-mono">{emailStatus?.from || 'Not configured'}</span>
+              </div>
+            </div>
+
+            {testResult && (
+              <div className={`alert ${testResult.success ? 'alert-success' : 'alert-error'}`} role="status">
+                <Info className="h-4 w-4" />
+                <span>{testResult.message}</span>
+              </div>
+            )}
+
+            {broadcastResult && (
+              <div className={`alert ${broadcastResult.success ? 'alert-success' : 'alert-error'}`} role="status">
+                <Info className="h-4 w-4" />
+                <span>{broadcastResult.message}</span>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-border">
+              <label className="field-label" htmlFor="test-email-target">
+                Send verification test email
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="test-email-target"
+                  type="email"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="Enter email to test (e.g. user@example.com)"
+                  className="field flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={sendingTest || !testEmail}
+                  className="btn btn-secondary text-xs"
+                >
+                  {sendingTest ? <Spinner size={13} /> : <Send className="h-3.5 w-3.5" />}
+                  <span>{sendingTest ? 'Sending…' : 'Send Test'}</span>
+                </button>
+              </div>
+              <p className="field-hint">
+                Verifies SMTP credentials and test delivery. When SMTP is not set, it simulates and logs.
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-border flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold text-ink">Broadcast "I am active" to all users</div>
+                <div className="text-xs text-ink-3">Sends an English active notification email to all registered user accounts.</div>
+              </div>
+              <button
+                type="button"
+                onClick={handleBroadcastActive}
+                disabled={broadcasting}
+                className="btn btn-secondary text-xs"
+              >
+                {broadcasting ? <Spinner size={13} /> : <Radio className="h-3.5 w-3.5 text-emerald-400" />}
+                <span>{broadcasting ? 'Broadcasting…' : 'Broadcast Now'}</span>
+              </button>
             </div>
           </div>
         </SectionCard>

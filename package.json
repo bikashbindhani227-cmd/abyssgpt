@@ -15,5 +15,11 @@
     "start": "node dist/server.cjs",
     "lint": "npm run lint --workspace=frontend",
     "test": "npm run test --workspace=backend"
+  },
+  "dependencies": {
+    "nodemailer": "^10.0.10"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.2"
   }
 }
