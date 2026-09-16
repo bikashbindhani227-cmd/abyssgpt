@@ -9,10 +9,13 @@ import {
   LogOut,
   FilePlus2,
   ShieldCheck,
+  Download,
 } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
+import { PWAInstallModal } from './PWAInstallModal.js';
+import { usePWAInstall } from '../hooks/usePWAInstall.js';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -45,6 +48,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { userProfile, isPremium, isAdmin, logout } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const { isInstalled } = usePWAInstall();
 
   const handleNewChat = async () => {
     await createNewChat();
@@ -217,12 +222,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         <div className="sidebar-bottom-actions">
+          {!isInstalled && (
+            <button
+              onClick={() => {
+                setShowInstallModal(true);
+              }}
+              style={{ color: 'var(--accent-strong, #818cf8)' }}
+            >
+              <Download size={15} />
+              <span>Install App</span>
+            </button>
+          )}
           <button onClick={handleSignOut}>
             <LogOut size={15} />
             <span>Sign out</span>
           </button>
         </div>
       </aside>
+
+      <PWAInstallModal isOpen={showInstallModal} onClose={() => setShowInstallModal(false)} />
     </>
   );
 };

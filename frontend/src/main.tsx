@@ -8,3 +8,18 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// Register service worker for Progressive Web App (PWA) installability
+if ('serviceWorker' in navigator && process.env.NODE_ENV !== 'test') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        // Registration successful
+      })
+      .catch((err) => {
+        console.warn('ServiceWorker registration error:', err);
+      });
+  });
+}
+

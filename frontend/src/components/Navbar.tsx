@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, MoreHorizontal, PanelLeft, Plus, Crown, UserRound, LogOut, ShieldCheck } from 'lucide-react';
+import { Menu, MoreHorizontal, PanelLeft, Plus, Crown, UserRound, LogOut, ShieldCheck, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useChat } from '../contexts/ChatContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
+import { PWAInstallModal } from './PWAInstallModal.js';
+import { usePWAInstall } from '../hooks/usePWAInstall.js';
 
 interface NavbarProps {
   onToggleSidebar: () => void;
@@ -20,6 +22,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { isPremium, isAdmin, logout } = useAuth();
   const { activeConversation, createNewChat } = useChat();
   const [showMenu, setShowMenu] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const { isInstalled } = usePWAInstall();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,6 +92,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button role="menuitem" onClick={() => { setShowMenu(false); onOpenAccount(); }}>
               <UserRound size={15} /> Account & Settings
             </button>
+            {!isInstalled && (
+              <button role="menuitem" onClick={() => { setShowMenu(false); setShowInstallModal(true); }}>
+                <Download size={15} className="text-indigo-400" /> Install AbyssGPT App
+              </button>
+            )}
             {isAdmin && (
               <button role="menuitem" onClick={() => { setShowMenu(false); onOpenAdmin(); }}>
                 <ShieldCheck size={15} className="text-cyan-400" /> Admin Dashboard
@@ -100,6 +109,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
       </div>
+
+      <PWAInstallModal isOpen={showInstallModal} onClose={() => setShowInstallModal(false)} />
     </header>
   );
 };
