@@ -107,7 +107,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   }, [addAttachment]);
 
   const canSend = (Boolean(text.trim()) || pendingAttachments.length > 0) && !disabled;
-  const isAgentMode = (agentStartedAt !== null && agentFinishedAt === null) || Boolean(agentActivity && agentActivity.length > 0);
+  const isAgentMode = isStreaming && Boolean((agentStartedAt !== null && agentFinishedAt === null) || (agentActivity && agentActivity.some(a => a.status === 'running')));
 
   return (
     <div className="composer-wrap">

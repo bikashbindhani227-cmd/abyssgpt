@@ -1296,7 +1296,7 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
   .mobile-menu { display: grid; }
   .top-title { display: none; }
   .top-new { display: grid; }
-  .chat-inner { padding: 16px 14px 186px; }
+  .chat-inner { padding: 16px 14px 0; }
   .empty { min-height: calc(100dvh - 250px); padding: 20px 16px; }
   .prompt-grid { grid-template-columns: 1fr 1fr; gap: 7px; max-width: 100%; }
   .message { gap: 9px; margin-bottom: 24px; }
@@ -1369,13 +1369,28 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
   min-height: 0;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-bottom: 240px;
 }
 .chat-inner {
   width: min(780px, 100%);
   margin: 0 auto;
-  padding: 32px 24px 220px;
+  padding: 32px 24px 0;
   display: flex;
   flex-direction: column;
+  flex-grow: 1;
+}
+.chat-bottom-spacer {
+  height: clamp(210px, 30vh, 270px);
+  min-height: clamp(210px, 30vh, 270px);
+  flex: 0 0 clamp(210px, 30vh, 270px);
+  width: 100%;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 /* ---------- User & Assistant Messages ---------- */
@@ -2104,7 +2119,7 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
 }
 
 @media (max-width: 760px) {
-  .chat-inner { padding: 16px 14px 190px; }
+  .chat-inner { padding: 16px 14px 0; }
   .composer-wrap { padding-left: 12px; padding-right: 12px; }
   .app:not(.sidebar-collapsed) .composer-wrap { left: 0; }
   .prompt-grid { grid-template-columns: 1fr; }

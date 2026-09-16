@@ -94,7 +94,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
     const scroller = chatRef.current;
     if (!scroller) return;
     const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distanceFromBottom > 160 && isStreaming) return;
+    if (distanceFromBottom > 260 && isStreaming) return;
     lastScrollAt.current = now;
     const id = window.requestAnimationFrame(() => {
       if (scroller) {
@@ -169,6 +169,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                   Upgrade
                 </button>
               </div>
+            )}
+
+            {(messages.length > 0 || isStreaming) && (
+              <div className="chat-bottom-spacer" aria-hidden="true" />
             )}
           </div>
         )}
