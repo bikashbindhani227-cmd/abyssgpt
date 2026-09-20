@@ -52,14 +52,16 @@ export const AdBanner: React.FC<AdBannerProps> = ({ slot, onOpenPremium }) => {
   const adsenseRef = useRef<HTMLModElement>(null);
   const customScriptRef = useRef<HTMLDivElement>(null);
 
-  const isPremium = userProfile?.plan === 'premium';
+  const isPremium = userProfile?.plan === 'premium' || Boolean(userProfile?.isAdmin);
+  // Premium members can toggle off all advertisements on the platform (defaults to true for Pro)
+  const hideAdsForUser = isPremium && userProfile?.hideAds !== false;
 
   useEffect(() => {
     loadPublicSettings().then((s) => setSettings(s));
   }, []);
 
-  // Pro users never see ads
-  if (isPremium) {
+  // When a Premium member has toggled off ads, completely suppress all ads
+  if (hideAdsForUser) {
     return null;
   }
 

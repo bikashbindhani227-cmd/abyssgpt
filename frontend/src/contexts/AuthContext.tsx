@@ -34,6 +34,8 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateDisplayName: (name: string) => Promise<void>;
+  updateAdsToggle: (hideAds: boolean) => Promise<void>;
+  updatePreferences: (updates: { displayName?: string; hideAds?: boolean }) => Promise<void>;
   notifyActiveSession: () => Promise<void>;
 }
 
@@ -144,14 +146,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await sendPasswordResetEmail(auth, email);
   };
 
-  const updateDisplayName = async (name: string) => {
+  const updatePreferences = async (updates: { displayName?: string; hideAds?: boolean }) => {
     if (!auth.currentUser) return;
-    await updateFirebaseProfile(auth.currentUser, { displayName: name });
-    await apiRequest('/api/user/profile', {
+    if (updates.displayName) {
+      await updateFirebaseProfile(auth.currentUser, { displayName: updates.displayName });
+    }
+    const res = await apiRequest<{ user?: UserProfile } | UserProfile>('/api/user/profile', {
       method: 'PATCH',
-      body: JSON.stringify({ displayName: name }),
+      body: JSON.stringify(updates),
+    });
+    // Optimistically update local userProfile
+    setUserProfile((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        ...(updates.displayName !== undefined ? { displayName: updates.displayName } : {}),
+        ...(updates.hideAds !== undefined ? { hideAds: updates.hideAds } : {}),
+      };
     });
     await refreshProfile();
+  };
+
+  const updateDisplayName = async (name: string) => {
+    await updatePreferences({ displayName: name });
+  };
+
+  const updateAdsToggle = async (hideAds: boolean) => {
+    await updatePreferences({ hideAds });
   };
 
   const isAdmin = Boolean(userProfile?.isAdmin);
@@ -173,6 +194,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendPasswordReset,
         refreshProfile,
         updateDisplayName,
+        updateAdsToggle,
+        updatePreferences,
         notifyActiveSession,
       }}
     >

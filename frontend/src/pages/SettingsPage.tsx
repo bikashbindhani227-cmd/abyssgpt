@@ -12,6 +12,9 @@ import {
   Clock,
   Gauge,
   Sparkles,
+  ShieldCheck,
+  Shield,
+  EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useTheme } from '../contexts/ThemeContext.js';
@@ -34,7 +37,7 @@ const TABS: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<{ 
 ];
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremium }) => {
-  const { userProfile, limits, updateDisplayName } = useAuth();
+  const { userProfile, limits, updateDisplayName, updateAdsToggle } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
@@ -42,6 +45,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+
+  // Ad toggle state for Premium members
+  const [isSavingAds, setIsSavingAds] = useState(false);
+  const [adsToggleSaved, setAdsToggleSaved] = useState(false);
+  const [adsToggleError, setAdsToggleError] = useState<string | null>(null);
 
   // Memory state
   const [memory, setMemory] = useState<UserMemory>({ facts: [], enabled: true, updatedAt: '' });
@@ -128,7 +136,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
     { id: 'system', label: 'System', icon: Laptop },
   ];
 
-  const isPremium = userProfile?.plan === 'premium';
+  const isPremium = userProfile?.plan === 'premium' || Boolean(userProfile?.isAdmin);
+  // Default for premium members is ad-free (true) unless explicitly toggled to false
+  const adsToggledOff = isPremium ? userProfile?.hideAds !== false : false;
+
+  const handleToggleAds = async (newVal: boolean) => {
+    if (!isPremium) {
+      onOpenPremium();
+      return;
+    }
+    setAdsToggleError(null);
+    setIsSavingAds(true);
+    try {
+      await updateAdsToggle(newVal);
+      setAdsToggleSaved(true);
+      setTimeout(() => setAdsToggleSaved(false), 2200);
+    } catch (err) {
+      setAdsToggleError(err instanceof Error ? err.message : 'Could not update ad preferences.');
+    } finally {
+      setIsSavingAds(false);
+    }
+  };
 
   return (
     <div className="min-h-dvh bg-bg text-ink">
@@ -218,6 +246,89 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
                   </button>
                 </div>
               </form>
+            </SectionCard>
+
+            {/* Ad-Free Experience SectionCard */}
+            <SectionCard
+              title={
+                <span className="flex items-center gap-2">
+                  <ShieldCheck size={16} style={{ color: 'var(--accent)' }} />
+                  <span>Ad-Free Experience</span>
+                </span>
+              }
+              description={
+                isPremium
+                  ? 'Toggle off all advertisements and sponsored banners across the platform.'
+                  : 'Ad-free experience is reserved exclusively for AbyssGPT Pro members.'
+              }
+              action={
+                isPremium ? (
+                  <div className="flex items-center gap-2">
+                    {isSavingAds && <Spinner size={14} />}
+                    {!isSavingAds && adsToggleSaved && <Check className="h-4 w-4 text-emerald-400" />}
+                    <Toggle
+                      checked={adsToggledOff}
+                      onChange={handleToggleAds}
+                      label={adsToggledOff ? 'Turn off all advertisements: ON' : 'Turn off all advertisements: OFF'}
+                    />
+                  </div>
+                ) : (
+                  <span className="badge badge-warning flex items-center gap-1">
+                    <Crown size={11} /> Pro only
+                  </span>
+                )
+              }
+            >
+              {adsToggleError && (
+                <div className="alert alert-error mb-3" role="alert">
+                  <span>{adsToggleError}</span>
+                </div>
+              )}
+
+              {isPremium ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2 p-3.5 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                          adsToggledOff ? 'bg-emerald-500/15 text-emerald-400' : 'bg-surface-3 text-ink-3'
+                        }`}
+                      >
+                        {adsToggledOff ? <EyeOff size={16} /> : <Shield size={16} />}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-ink">
+                          {adsToggledOff ? 'All advertisements are turned off' : 'Advertisements are currently visible'}
+                        </div>
+                        <div className="text-[11.5px] text-ink-3">
+                          {adsToggledOff
+                            ? 'Zero advertisements or promotional banners will appear anywhere on your screen.'
+                            : 'Flip the switch above to toggle off all banner and display ads.'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`badge text-[11px] ${adsToggledOff ? 'badge-success' : 'badge-neutral'}`}>
+                      {adsToggledOff ? '100% Ad-Free' : 'Ads Active'}
+                    </span>
+                  </div>
+                  <p className="field-hint">
+                    As a Premium member, this switch gives you complete control over advertisements on your account.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4 text-xs sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="font-semibold text-ink">Enjoy a completely ad-free platform</div>
+                    <div className="text-ink-3">
+                      Upgrade to AbyssGPT Pro to unlock the ad-free switch, 200 daily messages, and priority reasoning.
+                    </div>
+                  </div>
+                  <button onClick={onOpenPremium} className="btn btn-sm btn-primary shrink-0">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Upgrade to Pro</span>
+                  </button>
+                </div>
+              )}
             </SectionCard>
 
             {!isPremium && (
@@ -373,6 +484,38 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
                 </div>
                 <div className="tabular mt-1.5 text-xl font-bold text-ink">{limits?.contextLimit ?? 10} msgs</div>
                 <div className="mt-0.5 text-[10.5px] text-ink-3">Conversation history retained</div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-line bg-surface-2 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck size={18} style={{ color: 'var(--accent)' }} />
+                  <div>
+                    <div className="text-xs font-semibold text-ink">Ad-Free Platform Browsing</div>
+                    <div className="text-[11.5px] text-ink-3">
+                      {isPremium
+                        ? adsToggledOff
+                          ? '100% ad-free experience is active across the platform.'
+                          : 'Advertisements are currently turned on.'
+                        : 'Free plan displays sponsored banners. Upgrade to Pro to turn off all ads.'}
+                    </div>
+                  </div>
+                </div>
+                {isPremium ? (
+                  <div className="flex items-center gap-2">
+                    {isSavingAds && <Spinner size={13} />}
+                    <Toggle
+                      checked={adsToggledOff}
+                      onChange={handleToggleAds}
+                      label="Toggle ads off"
+                    />
+                  </div>
+                ) : (
+                  <button onClick={onOpenPremium} className="btn btn-xs btn-primary shrink-0">
+                    Remove ads
+                  </button>
+                )}
               </div>
             </div>
 

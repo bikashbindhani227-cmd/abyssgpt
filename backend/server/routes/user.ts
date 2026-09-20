@@ -34,31 +34,49 @@ userRouter.get(
   }
 );
 
-// Update user profile display name
+// Update user profile display name or preferences
 userRouter.patch(
   '/profile',
   requireAuth,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { displayName } = req.body;
-      if (!displayName || typeof displayName !== 'string') {
-        res.status(400).json({ error: 'Display name is required.' });
+      const { displayName, hideAds } = req.body;
+      const updates: Partial<UserProfile> = {};
+
+      if (displayName !== undefined) {
+        if (!displayName || typeof displayName !== 'string') {
+          res.status(400).json({ error: 'Display name cannot be empty.' });
+          return;
+        }
+        updates.displayName = displayName.trim().slice(0, 50);
+      }
+
+      if (hideAds !== undefined) {
+        const isPremiumOrAdmin = req.user!.plan === 'premium' || req.user!.isAdmin;
+        if (!isPremiumOrAdmin && hideAds === true) {
+          res.status(403).json({ error: 'Ad-free toggle is reserved exclusively for Premium members.' });
+          return;
+        }
+        updates.hideAds = Boolean(hideAds);
+      }
+
+      if (Object.keys(updates).length === 0) {
+        res.status(400).json({ error: 'No fields provided to update.' });
         return;
       }
 
-      const cleanName = displayName.trim().slice(0, 50);
-      const updated = persistentStorage.updateUser(req.user!.uid, {
-        displayName: cleanName,
-      });
+      updates.updatedAt = new Date().toISOString();
+
+      const updated = persistentStorage.updateUser(req.user!.uid, updates);
 
       if (hasServiceAccount) {
         adminDb.collection('users').doc(req.user!.uid).set(
-          { displayName: cleanName, updatedAt: new Date().toISOString() },
+          updates,
           { merge: true }
         ).catch(() => {});
       }
 
-      res.json(updated || req.user!);
+      res.json(updated || { ...req.user!, ...updates });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to update profile';
       res.status(500).json({ error: errorMsg });

@@ -19,6 +19,7 @@ export interface UserProfile {
   premiumExpiresAt?: string | null;
   customDailyMessageLimit?: number | null;
   customRateLimitPerMinute?: number | null;
+  hideAds?: boolean;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
