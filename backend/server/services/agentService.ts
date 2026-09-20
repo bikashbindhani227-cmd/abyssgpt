@@ -1,4 +1,4 @@
-import { searchTavily } from './tavilyService.js';
+import { searchPerplexityWeb } from './perplexitySearchService.js';
 import { readUrlWithJina } from './jinaService.js';
 import { runCodeInDaytona, runCommandInDaytona, runProjectInDaytona } from './daytonaService.js';
 import { stripCodeFences } from './toolRegistry.js';
@@ -44,12 +44,16 @@ export function createRawToolExecutor(
     if (name === 'web_search') {
       const query = String(args.query || '').trim();
       if (!query) return 'No search query was provided.';
-      const result = await searchTavily(query);
-      if (!result) throw new Error('Live web search failed or is unavailable. Do not claim that live search succeeded.');
-      if (!result.results.length) return 'Live web search completed but returned no results.';
+      const result = await searchPerplexityWeb(query);
+      if (!result) throw new Error('Live web research failed or is unavailable. Do not claim that live search succeeded.');
+      if (!result.results.length && !result.answer) return 'Live web research completed but returned no results.';
+      const linksSection = result.results?.length
+        ? `Verified Active Resources & Direct Links:\n${result.results.map((r, i) => `${i + 1}. [${r.title}](${r.url}) — ${r.url}`).join('\n')}`
+        : '';
       return [
-        result.answer ? `Answer: ${result.answer}` : '',
-        ...result.results.slice(0, 6).map((r, i) => `Source ${i + 1}: ${r.title}\nURL: ${r.url}\n${r.content}`),
+        result.answer ? `[Live Web Search Findings]:\n${result.answer}` : '',
+        linksSection,
+        result.citations?.length ? `Sources & Citations:\n${result.citations.map((c, i) => `[${i + 1}] ${c}`).join('\n')}` : '',
       ].filter(Boolean).join('\n\n').slice(0, 30000);
     }
 
@@ -303,16 +307,20 @@ export function createBudgetedToolExecutor(
       if (name === 'web_search') {
         const query = String(args.query || '').trim();
         if (!query) return 'No search query was provided.';
-        const searchResult = await searchTavily(query, {
+        const searchResult = await searchPerplexityWeb(query, {
           maxResults: budget.MAX_SEARCH_RESULTS,
           timeoutMs: perCallTimeout,
           searchDepth: plan.classification.category === 'research' && plan.classification.complexity >= 7 ? 'advanced' : 'basic',
         });
-        if (!searchResult) throw new Error('Live web search failed or is unavailable. Do not claim that live search succeeded.');
-        if (!searchResult.results.length) return 'Live web search completed but returned no results.';
+        if (!searchResult) throw new Error('Live web research failed or is unavailable. Do not claim that live search succeeded.');
+        if (!searchResult.results.length && !searchResult.answer) return 'Live web research completed but returned no results.';
+        const linksSection = searchResult.results?.length
+          ? `Verified Active Resources & Direct Links:\n${searchResult.results.map((r, i) => `${i + 1}. [${r.title}](${r.url}) — ${r.url}`).join('\n')}`
+          : '';
         return [
-          searchResult.answer ? `Answer: ${searchResult.answer}` : '',
-          ...searchResult.results.slice(0, budget.MAX_SEARCH_RESULTS).map((r, i) => `Source ${i + 1}: ${r.title}\nURL: ${r.url}\n${r.content}`),
+          searchResult.answer ? `[Live Web Search Findings]:\n${searchResult.answer}` : '',
+          linksSection,
+          searchResult.citations?.length ? `Sources & Citations:\n${searchResult.citations.slice(0, budget.MAX_SEARCH_RESULTS).map((c, i) => `[${i + 1}] ${c}`).join('\n')}` : '',
         ].filter(Boolean).join('\n\n');
       }
 

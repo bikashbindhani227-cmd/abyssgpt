@@ -3,7 +3,7 @@ import { adminDb } from '../config/firebaseAdmin.js';
 import { getAppLimitsConfig } from './configService.js';
 import type { UserProfile } from '../../types.js';
 
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'yamrajm790@gmail.com').toLowerCase();
 const hasServiceAccount = Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL);
 const usersCollection = () => adminDb.collection('users');
 

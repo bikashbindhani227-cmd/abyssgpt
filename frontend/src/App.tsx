@@ -155,7 +155,6 @@ const AppContent: React.FC = () => {
         onCloseMobile={closeMobileSidebar}
         onOpenSettings={() => setCurrentPage('settings')}
         onOpenPremium={() => setCurrentPage('premium')}
-        onOpenAdmin={() => setCurrentPage('admin')}
         onLogout={() => setCurrentPage('chat')}
       />
 
@@ -163,7 +162,6 @@ const AppContent: React.FC = () => {
         <Navbar
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onOpenPremium={() => setCurrentPage('premium')}
-          onOpenAdmin={() => setCurrentPage('admin')}
           onOpenAccount={() => setCurrentPage('settings')}
         />
         <ChatPage

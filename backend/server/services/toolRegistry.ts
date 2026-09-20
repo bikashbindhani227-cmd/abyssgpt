@@ -31,7 +31,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the live web for current facts, recent information, prices, news, documentation, or sources using Tavily. Use when the answer depends on information that may have changed.',
+      description: 'Search the live web for real-time facts, recent information, documentation, news, pricing, and live intelligence. Use whenever up-to-date online research is required.',
       parameters: {
         type: 'object',
         properties: { query: { type: 'string', description: 'A focused web search query.' } },

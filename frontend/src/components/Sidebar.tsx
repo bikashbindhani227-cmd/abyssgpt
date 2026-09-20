@@ -8,7 +8,6 @@ import {
   X,
   LogOut,
   FilePlus2,
-  ShieldCheck,
   Download,
 } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext.js';
@@ -22,7 +21,6 @@ interface SidebarProps {
   onCloseMobile?: () => void;
   onOpenSettings: () => void;
   onOpenPremium: () => void;
-  onOpenAdmin?: () => void;
   onLogout: () => void;
 }
 
@@ -31,7 +29,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   onOpenSettings,
   onOpenPremium,
-  onOpenAdmin,
   onLogout,
 }) => {
   const {
@@ -45,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     renameConversation,
     deleteConversation,
   } = useChat();
-  const { userProfile, isPremium, isAdmin, logout } = useAuth();
+  const { userProfile, isPremium, logout } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -186,19 +183,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="sidebar-spacer" />
-
-        {isAdmin && onOpenAdmin && (
-          <button
-            className="sidebar-admin-btn"
-            onClick={() => {
-              onOpenAdmin();
-              onCloseMobile?.();
-            }}
-          >
-            <ShieldCheck size={16} />
-            <span>Admin Dashboard</span>
-          </button>
-        )}
 
         <button className={`upgrade-card${isPremium ? ' pro' : ''}`} onClick={onOpenPremium}>
           <div>

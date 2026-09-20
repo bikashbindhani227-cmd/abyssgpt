@@ -13,11 +13,30 @@
       "email": "bindhanibikash71@gmail.com",
       "premiumExpiresAt": "2027-09-09T06:53:19.684Z",
       "plan": "premium",
-      "isAdmin": true,
+      "isAdmin": false,
       "lastUsageDate": "2026-09-10",
       "dailyMessageCount": 12,
       "updatedAt": "2026-09-10T09:17:31.844Z",
       "lastActiveAt": "2026-09-10T09:17:53.841Z"
+    },
+    "lcmfSCJ1w5gvV68r0KWDen7q4Sm2": {
+      "premiumExpiresAt": null,
+      "displayName": "Bikash Bindhani",
+      "customRateLimitPerMinute": null,
+      "isAdmin": false,
+      "createdAt": "2026-09-16T10:20:24.946Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocK_wbzfCALnvsA3iMCa0TkrRyRpz7io0Bc9PojKz4rB2TEb_Pk=s96-c",
+      "uid": "lcmfSCJ1w5gvV68r0KWDen7q4Sm2",
+      "customDailyMessageLimit": null,
+      "isBanned": false,
+      "dailyMessageLimit": 20,
+      "plan": "free",
+      "rateLimitPerMinute": 5,
+      "email": "bikashbindhani227@gmail.com",
+      "lastUsageDate": "2026-09-20",
+      "lastActiveAt": "2026-09-20T10:21:03.423Z",
+      "dailyMessageCount": 5,
+      "updatedAt": "2026-09-20T10:21:03.423Z"
     }
   },
   "conversations": {
@@ -182,6 +201,104 @@
         "lastMessagePreview": "Creat a full stack ecommrc website",
         "updatedAt": "2026-09-09T15:24:23.982Z"
       }
+    ],
+    "lcmfSCJ1w5gvV68r0KWDen7q4Sm2": [
+      {
+        "id": "c_dc2e2469-48eb-4dbe-b88a-47a20158c4c9",
+        "title": "Ak tagda hacking tool dhund ke de na",
+        "createdAt": "2026-09-20T10:20:46.771Z",
+        "messageCount": 2,
+        "lastMessagePreview": "Based on verified live web research, here are some of the most common ethical ha",
+        "updatedAt": "2026-09-20T10:21:02.628Z"
+      },
+      {
+        "id": "c_3311a23a-d0d7-4db0-ad63-266d2aedfb29",
+        "title": "Hii",
+        "createdAt": "2026-09-20T10:04:23.419Z",
+        "messageCount": 4,
+        "lastMessagePreview": "I can help you find free movie websites. Here are a few options:\n\n1. **123Movies",
+        "updatedAt": "2026-09-20T10:04:54.972Z"
+      },
+      {
+        "id": "c_85132620-6dc6-44f7-afee-d638e88ce680",
+        "title": "Hi",
+        "createdAt": "2026-09-20T10:03:30.663Z",
+        "messageCount": 4,
+        "lastMessagePreview": "Mujhe aapki madad karne ke liye bahut se cheezain kar sakti hai. Main aapko info",
+        "updatedAt": "2026-09-20T10:03:47.754Z"
+      },
+      {
+        "id": "c_faedb858-9a39-4795-9db6-95459c91ab3d",
+        "title": "Hi",
+        "createdAt": "2026-09-17T09:10:19.304Z",
+        "messageCount": 2,
+        "lastMessagePreview": "Hello! How can I assist you today? I'm here to help with a wide range of topics,",
+        "updatedAt": "2026-09-17T09:10:22.206Z"
+      },
+      {
+        "id": "c_b0dc5530-9eea-4288-8ef2-e1cb57739b80",
+        "title": "Compare Server-Sent Events (SSE) vs WebSockets for real-time",
+        "createdAt": "2026-09-16T10:20:28.121Z",
+        "messageCount": 2,
+        "lastMessagePreview": "Server-Sent Events (SSE) and WebSockets are both technologies for real-time comm",
+        "updatedAt": "2026-09-16T10:20:35.271Z"
+      },
+      {
+        "id": "c_9e121393-1c8d-41b2-ae0e-9915ed46b309",
+        "createdAt": "2026-09-16T10:20:30.390Z",
+        "title": "Ho",
+        "messageCount": 4,
+        "lastMessagePreview": "Hello! I'm here to help. What can I assist you with today?",
+        "updatedAt": "2026-09-16T10:20:46.951Z"
+      },
+      {
+        "id": "c_516916b8-21dc-4566-a0bf-e46de098bddd",
+        "title": "Hi",
+        "createdAt": "2026-09-16T10:27:30.446Z",
+        "messageCount": 2,
+        "lastMessagePreview": "Hello! How can I assist you today? If you have any questions or need help with s",
+        "updatedAt": "2026-09-16T10:27:32.641Z"
+      },
+      {
+        "id": "c_42909d55-00c6-49ef-ab2f-8d4cfe604193",
+        "title": "New Chat",
+        "createdAt": "2026-09-16T10:27:39.523Z",
+        "updatedAt": "2026-09-16T10:27:39.523Z",
+        "messageCount": 0,
+        "lastMessagePreview": ""
+      },
+      {
+        "id": "c_dbcb6db0-88d5-4e5b-bd3c-0d163b053f81",
+        "title": "Hii",
+        "createdAt": "2026-09-16T10:44:10.621Z",
+        "messageCount": 4,
+        "lastMessagePreview": "To create a full-stack Telegram bot, we'll need to set up both the backend and f",
+        "updatedAt": "2026-09-16T10:45:18.764Z"
+      },
+      {
+        "id": "c_ac49dd72-b9c6-4cf1-9225-944ce4e3289d",
+        "title": "Can you help me write and review code for my project?",
+        "createdAt": "2026-09-16T11:23:20.923Z",
+        "messageCount": 2,
+        "lastMessagePreview": "To assist you effectively, I'll need some details about your project. Could you ",
+        "updatedAt": "2026-09-16T11:23:27.038Z"
+      },
+      {
+        "id": "c_75014ed5-2551-4b38-b713-16d3d74584e4",
+        "title": "Hi",
+        "createdAt": "2026-09-16T11:31:54.685Z",
+        "messageCount": 4,
+        "lastMessagePreview": "What would you like help with? I'm here to assist you with any questions or task",
+        "updatedAt": "2026-09-16T11:32:05.871Z"
+      },
+      {
+        "id": "c_39afa5e5-f2c3-4334-919d-95126108bb0a",
+        "title": "Hi",
+        "createdAt": "2026-09-17T03:28:52.177Z",
+        "messageCount": 2,
+        "lastMessagePreview": "Hello! How can I assist you today? If you have any questions or need help with s",
+        "updatedAt": "2026-09-17T03:28:54.376Z"
+      }
     ]
   },
   "messages": {
@@ -335,6 +452,77 @@
         "createdAt": "2026-09-10T09:17:35.624Z",
         "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
       }
+    ],
+    "c_85132620-6dc6-44f7-afee-d638e88ce680": [
+      {
+        "id": "m_c15fbbdc-700a-4502-8814-c54f918eac49",
+        "role": "user",
+        "content": "Hi",
+        "createdAt": "2026-09-20T10:03:30.911Z"
+      },
+      {
+        "id": "m_276b916d-4410-4180-9d9e-120ab3d7c369",
+        "role": "assistant",
+        "content": "Hello! How can I assist you today?",
+        "createdAt": "2026-09-20T10:03:33.056Z",
+        "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+      },
+      {
+        "id": "m_f82bfc81-6ee7-4ab5-8d63-9bcb9ccdd845",
+        "role": "user",
+        "content": "Tu kiya kiya kar sakta hai",
+        "createdAt": "2026-09-20T10:03:44.691Z"
+      },
+      {
+        "id": "m_fb4115f1-ac2c-4a6e-8f39-67507ee48c44",
+        "role": "assistant",
+        "content": "Mujhe aapki madad karne ke liye bahut se cheezain kar sakti hai. Main aapko information provide kar sakti hoon, questions ka jawab de sakti hoon, coding ka madad kar sakti hoon, aur bahut se aur cheezain. Kya aapki madad kar sakti hoon?",
+        "createdAt": "2026-09-20T10:03:47.754Z",
+        "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+      }
+    ],
+    "c_3311a23a-d0d7-4db0-ad63-266d2aedfb29": [
+      {
+        "id": "m_554768b7-e2ec-49a3-98bd-2c0ffe84e08c",
+        "role": "user",
+        "content": "Hii",
+        "createdAt": "2026-09-20T10:04:23.615Z"
+      },
+      {
+        "id": "m_3d339806-6736-4861-aa8a-c05c779bd6f1",
+        "role": "assistant",
+        "content": "Hello! How can I assist you today?",
+        "createdAt": "2026-09-20T10:04:25.447Z",
+        "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+      },
+      {
+        "id": "m_c79017a2-f8c0-4d57-a551-b5348920f481",
+        "role": "user",
+        "content": "Ak tagda freee movie website dhund ke de na",
+        "createdAt": "2026-09-20T10:04:51.252Z"
+      },
+      {
+        "id": "m_0ec079e0-36ca-4218-9708-f161b6bb51df",
+        "role": "assistant",
+        "content": "I can help you find free movie websites. Here are a few options:\n\n1. **123Movies**: This is a popular website that offers a wide range of movies and TV shows for free. It has a user-friendly interface and a large collection of content.\n\n2. **Fmovies**: Fmovies is another great website for watching movies and TV shows online. It has a clean interface and offers a variety of genres.\n\n3. **Putlocker**: Putlocker is known for its extensive library of movies and TV shows. It also provides a search function to easily find specific titles.\n\n4. **YesMovies**: YesMovies offers a wide selection of movies and TV shows. It has a simple interface and is easy to navigate.\n\n5. **SolarMovie**: SolarMovie is a reliable source for free movies and TV shows. It has a good collection of content and is regularly updated.\n\nPlease note that while these websites offer free content, they may have ads and pop-ups. Also, the availability of content can vary, so you might need to check multiple sites to find what you're looking for.",
+        "createdAt": "2026-09-20T10:04:54.972Z",
+        "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+      }
+    ],
+    "c_dc2e2469-48eb-4dbe-b88a-47a20158c4c9": [
+      {
+        "id": "m_53cbe798-202f-4826-b049-935e4afa0965",
+        "role": "user",
+        "content": "Ak tagda hacking tool dhund ke de na",
+        "createdAt": "2026-09-20T10:20:47.015Z"
+      },
+      {
+        "id": "m_cb81dc43-0726-4838-a84f-80f00447b159",
+        "role": "assistant",
+        "content": "Based on verified live research, here are some of the most common ethical hacking tools that people usually start with, along with their direct links for further exploration:\n\n1. **Nmap** - A powerful network scanning tool.\n   - [Nmap Official Website](https://nmap.org/)\n\n2. **Wireshark** - A network protocol analyzer.\n   - [Wireshark Official Website](https://www.wireshark.org/)\n\n3. **Burp Suite** - A comprehensive web application security testing tool.\n   - [Burp Suite Official Website](https://portswigger.net/burp)\n\n4. **Metasploit** - A framework for developing and executing exploit code.\n   - [Metasploit Official Website](https://www.metasploit.com/)\n\n5. **Hashcat** - A password recovery tool.\n   - [Hashcat Official Website](https://hashcat.net/hashcat/)\n\n6. **John the Ripper** - A fast password cracker.\n   - [John the Ripper Official Website](https://www.openwall.com/john/)\n\n7. **Aircrack-ng** - A suite of tools to assess WiFi network security.\n   - [Aircrack-ng Official Website](https://www.aircrack-ng.org/)\n\nThese tools are widely used in the field of ethical hacking and cybersecurity for various purposes such as network scanning, packet analysis, web application testing, vulnerability verification, password auditing, and wireless testing.",
+        "createdAt": "2026-09-20T10:21:02.628Z",
+        "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+      }
     ]
   },
   "memories": {},
@@ -354,7 +542,9 @@
         "Priority reasoning experience",
         "Unlimited conversation history"
       ],
-      "defaultPremiumDurationDays": 30
+      "defaultPremiumDurationDays": 30,
+      "updatedBy": "yamrajm790@gmail.com",
+      "updatedAt": "2026-09-16T11:42:54.351Z"
     },
     "limits": {
       "free": {

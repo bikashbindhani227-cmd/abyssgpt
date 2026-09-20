@@ -56,6 +56,7 @@ export interface TaskClassification {
 }
 
 const CURRENT_INFO_RE = /\b(latest|today|current|currently|right now|news|breaking|price|prices|cost|weather|forecast|who won|release(?:d)? date|update[d]?|202[4-9]\s*[--/]\s*20[2-9]\d|this (?:week|month|year)|stock|exchange rate|score|live|trending|search(?: for| the web for)?|look\s*up|google|internet|online)\b/i;
+const SEARCH_INTENT_RE = /\b(search|find|dhund|dhundo|khoj|khojo|bata|batao|chahiye|kahan|kaunsa|kaunsi|konsa|konsi|best|top|free|movie|movies|film|films|cinema|series|anime|web ?series|stream|streaming|watch|download|torrent|ott|website|websites|site|sites|link|links|url|urls|tool|tools|software|app|apps|platform|platforms|channel|channels|group|bot|bots|apk|source|sources|recommend|recommendation|recommendations|suggest|suggestion|suggestions|list|give me|where|how to (?:find|get|watch|download)|what is the (?:best|link)|alternative|alternatives|portal|price|prices|cost|news|schedule|update|song|songs|video|videos|game|games)\b/i;
 const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
 const RESEARCH_RE = /\b(compare|comparison|versus|\bvs\.?\b|pros and cons|research|analyze|analyse|evaluate|market analysis|literature|state of the art|survey|benchmarks?)\b/i;
 const DEPTH_RE = /\b(in[- ]depth|deep dive|comprehensive|thorough|detailed|extensive|exhaustive|complete report|full report)\b/i;
@@ -65,7 +66,7 @@ const PROJECT_GENERATION_RE = /(?:\b(?:build|create|generate|develop|make|implem
 const SOFTWARE_ENGINEERING_RE = /\b(telegram bot|discord bot|\bbot\b|rest api|graphql api|\bapi\b|backend service|\bbackend\b|admin dashboard|\bdashboard\b|saas|\bcli\b|automation tool|full[- ]stack|web application|crud|sqlite|postgres|fastapi|express|flask|django|react|vite|next\.?js|dockerfile)\b/i;
 const CODE_FENCE_RE = /```[\s\S]+```/;
 const MATH_RE = /\b(calculate|compute|solve|equation|derivative|integral|matrix|probability|factorial|percentage|sqrt|log\b)/i;
-const TRIVIAL_RE = /^\s*(hi|hello|hey|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|good (?:morning|afternoon|evening)|how are you|what'?s up|bye|goodbye)\b[\s!.?]*$/i;
+const TRIVIAL_RE = /^\s*(hi|hello|hey|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|good (?:morning|afternoon|evening)|how are you|kya haal hai|kaise ho|bye|goodbye)\b[\s!.?]*$/i;
 const SIMPLE_DEF_RE = /^\s*(what is|what are|who is|who was|define|meaning of|explain (?:what|how)|how do (?:i|you)|can you tell me)\b[\s\S]{0,220}\??\s*$/i;
 
 export function classifyRequest(message: string, explicitWebSearch = false): TaskClassification {
@@ -85,7 +86,14 @@ export function classifyRequest(message: string, explicitWebSearch = false): Tas
   }
   if (hasFence) { needsCodeExecution = true; signals.push('code_block_present'); complexity += 1; }
   if (MATH_RE.test(text) && text.length < 400) { signals.push('computation'); needsCodeExecution = true; complexity += 1; }
-  if (CURRENT_INFO_RE.test(text)) { needsWebSearch = true; signals.push('current_info_topic'); complexity += 1; }
+  
+  const isSearchIntent = SEARCH_INTENT_RE.test(text);
+  const isCurrentInfo = CURRENT_INFO_RE.test(text);
+  if (isSearchIntent || isCurrentInfo) {
+    needsWebSearch = true;
+    signals.push(isSearchIntent ? 'search_discovery_intent' : 'current_info_topic');
+    complexity = Math.max(complexity, 5);
+  }
   if (urls.length > 0) { needsWebSearch = true; signals.push(`urls_present(${urls.length})`); complexity += urls.length > 2 ? 2 : 1; }
   let researchHits = 0;
   if (RESEARCH_RE.test(text)) { researchHits += 1; signals.push('research_depth'); }
@@ -102,7 +110,7 @@ export function classifyRequest(message: string, explicitWebSearch = false): Tas
   else if (complexity <= 3 && !hasFence && !needsCodeExecution && !urls.length && !needsWebSearch) category = 'simple';
   else if (researchHits >= 2 || complexity >= 6) category = 'research';
   else if (needsWebSearch || complexity >= 4) category = 'current_info';
-  else if (SIMPLE_DEF_RE.test(text)) category = 'simple';
+  else if (SIMPLE_DEF_RE.test(text) && !needsWebSearch) category = 'simple';
   else category = 'current_info';
   return { category, complexity, needsWebSearch, needsCodeExecution, signals };
 }
