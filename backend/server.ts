@@ -54,7 +54,50 @@ app.get('/robots.txt', (_req, res) => {
 });
 
 app.get('/health', (_req,res)=>res.json({ status:'ok', service:'abyssgpt-backend', timestamp:new Date().toISOString(), aiProvider:'AI Credits', modelConfigured:Boolean(process.env.MODEL_ID), firebaseConfigured:Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) }));
-app.get('/api/settings', async (_req,res)=>{ try { const s=await getAppSettingsConfig(); res.json({appName:s.appName,welcomeMessage:s.welcomeMessage,maintenanceMode:s.maintenanceMode,registrationEnabled:s.registrationEnabled,maxMessageLength:s.maxMessageLength,premiumPriceInr:s.premiumPriceInr,telegramUsername:s.telegramUsername,premiumBenefits:s.premiumBenefits}); } catch { res.status(200).json({appName:'AbyssGPT',welcomeMessage:'Welcome to AbyssGPT.',maintenanceMode:false,registrationEnabled:true,maxMessageLength:4000,premiumPriceInr:299,telegramUsername:'@MrNewton_2',premiumBenefits:[]}); }});
+app.get('/api/settings', async (_req,res)=>{
+  try {
+    const s = await getAppSettingsConfig();
+    res.json({
+      appName: s.appName,
+      welcomeMessage: s.welcomeMessage,
+      maintenanceMode: s.maintenanceMode,
+      registrationEnabled: s.registrationEnabled,
+      maxMessageLength: s.maxMessageLength,
+      premiumPriceInr: s.premiumPriceInr,
+      telegramUsername: s.telegramUsername,
+      premiumBenefits: s.premiumBenefits,
+      adsEnabled: s.adsEnabled ?? true,
+      adsProvider: s.adsProvider || 'banner',
+      adsenseClientId: s.adsenseClientId || '',
+      adsenseSlotId: s.adsenseSlotId || '',
+      customAdScript: s.customAdScript || '',
+      sponsorBannerUrl: s.sponsorBannerUrl || '',
+      sponsorLinkUrl: s.sponsorLinkUrl || 'https://telegram.me/MrNewton_2',
+      sponsorTitle: s.sponsorTitle || 'AbyssGPT Partner',
+      sponsorText: s.sponsorText || 'Reach thousands of active AI users. Contact to sponsor or upgrade to Pro for zero ads.',
+    });
+  } catch {
+    res.status(200).json({
+      appName: 'AbyssGPT',
+      welcomeMessage: 'Welcome to AbyssGPT.',
+      maintenanceMode: false,
+      registrationEnabled: true,
+      maxMessageLength: 4000,
+      premiumPriceInr: 299,
+      telegramUsername: '@MrNewton_2',
+      premiumBenefits: [],
+      adsEnabled: true,
+      adsProvider: 'banner',
+      adsenseClientId: '',
+      adsenseSlotId: '',
+      customAdScript: '',
+      sponsorBannerUrl: '',
+      sponsorLinkUrl: 'https://telegram.me/MrNewton_2',
+      sponsorTitle: 'AbyssGPT Partner',
+      sponsorText: 'Reach thousands of active AI users.',
+    });
+  }
+});
 app.use('/api/chat', chatRouter); app.use('/api/conversations', conversationsRouter); app.use('/api/user', userRouter); app.use('/api/memory', memoryRouter); app.use('/api/admin', adminRouter);
 
 // API 404

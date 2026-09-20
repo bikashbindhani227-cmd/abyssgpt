@@ -6,6 +6,7 @@ import { ChatMessageItem } from '../components/ChatMessageItem.js';
 import { ChatComposer } from '../components/ChatComposer.js';
 import { ChatSkeleton } from '../components/ui.js';
 import { AbyssLogo } from '../components/AbyssLogo.js';
+import { AdBanner } from '../components/AdBanner.js';
 
 interface ChatPageProps {
   onOpenSettings: () => void;
@@ -127,6 +128,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
                 <h1 className="empty-title">
                   Welcome{firstName ? `, ${firstName}` : ''}
                 </h1>
+
+                <AdBanner slot="chat-empty" onOpenPremium={onOpenPremium} />
               </div>
             )}
 

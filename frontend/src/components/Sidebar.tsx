@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 import { AbyssLogo } from './AbyssLogo.js';
 import { PWAInstallModal } from './PWAInstallModal.js';
 import { usePWAInstall } from '../hooks/usePWAInstall.js';
+import { AdBanner } from './AdBanner.js';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -183,6 +184,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="sidebar-spacer" />
+
+        <AdBanner slot="sidebar" onOpenPremium={onOpenPremium} />
 
         <button className={`upgrade-card${isPremium ? ' pro' : ''}`} onClick={onOpenPremium}>
           <div>

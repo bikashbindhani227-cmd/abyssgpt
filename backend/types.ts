@@ -75,6 +75,15 @@ export interface AppSettingsConfig {
   telegramUsername: string;
   premiumBenefits: string[];
   defaultPremiumDurationDays: number;
+  adsEnabled?: boolean;
+  adsProvider?: 'adsense' | 'custom' | 'banner';
+  adsenseClientId?: string;
+  adsenseSlotId?: string;
+  customAdScript?: string;
+  sponsorBannerUrl?: string;
+  sponsorLinkUrl?: string;
+  sponsorTitle?: string;
+  sponsorText?: string;
   updatedAt?: string;
   updatedBy?: string;
 }

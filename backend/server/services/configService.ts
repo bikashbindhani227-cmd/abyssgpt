@@ -8,7 +8,33 @@ let limitsCache:{value:AppLimitsConfig;expires:number}|null=null;
 let settingsCache:{value:AppSettingsConfig;expires:number}|null=null;
 const DEFAULT_SYSTEM_PROMPT=process.env.DEFAULT_SYSTEM_PROMPT||'You are AbyssGPT, a capable, direct, analytical conversational AI assistant. Speak clearly and helpfully.';
 const DEFAULT_LIMITS:AppLimitsConfig={free:{dailyMessageLimit:3,rateLimitPerMinute:5,contextLimit:10},premium:{dailyMessageLimit:200,rateLimitPerMinute:30,contextLimit:30}};
-const DEFAULT_SETTINGS:AppSettingsConfig={appName:'AbyssGPT',welcomeMessage:'Welcome to AbyssGPT. Ask anything and get a direct, thoughtful response.',maintenanceMode:false,registrationEnabled:true,maxMessageLength:4000,premiumPriceInr:Number(process.env.PREMIUM_PRICE_INR)||299,telegramUsername:process.env.TELEGRAM_USERNAME||'@MrNewton_2',premiumBenefits:['200 Daily Messages','30 Requests / minute','30 Message Context Window','Priority reasoning experience','Unlimited conversation history'],defaultPremiumDurationDays:30};
+const DEFAULT_SETTINGS:AppSettingsConfig={
+  appName:'AbyssGPT',
+  welcomeMessage:'Welcome to AbyssGPT. Ask anything and get a direct, thoughtful response.',
+  maintenanceMode:false,
+  registrationEnabled:true,
+  maxMessageLength:4000,
+  premiumPriceInr:Number(process.env.PREMIUM_PRICE_INR)||299,
+  telegramUsername:process.env.TELEGRAM_USERNAME||'@MrNewton_2',
+  premiumBenefits:[
+    '200 Daily Messages',
+    '30 Requests / minute',
+    '30 Message Context Window',
+    'Priority reasoning experience',
+    'Unlimited conversation history',
+    '100% Ad-Free Experience (No Ads)',
+  ],
+  defaultPremiumDurationDays:30,
+  adsEnabled:true,
+  adsProvider:'banner',
+  adsenseClientId:'',
+  adsenseSlotId:'',
+  customAdScript:'',
+  sponsorBannerUrl:'',
+  sponsorLinkUrl:'https://telegram.me/MrNewton_2',
+  sponsorTitle:'AbyssGPT Partner',
+  sponsorText:'Reach thousands of active AI users. Contact to sponsor or upgrade to Pro for zero ads.',
+};
 async function remote(doc:string){ if(!hasServiceAccount)return null; const s=await adminDb.collection('appConfig').doc(doc).get(); return s.exists?s.data():null; }
 export async function getSystemPromptConfig(){ const now=Date.now(); if(systemCache&&systemCache.expires>now)return systemCache.value; const remoteData=await remote('system'); if(remoteData?.systemPrompt){const v=remoteData as SystemPromptConfig; persistentStorage.saveSystemPromptConfig(v); systemCache={value:v,expires:now+CONFIG_CACHE_TTL_MS}; return v;} const local=persistentStorage.getSystemPromptConfig(); if(local?.systemPrompt){systemCache={value:local,expires:now+CONFIG_CACHE_TTL_MS}; return local;} const v={systemPrompt:DEFAULT_SYSTEM_PROMPT,previousPrompts:[],updatedAt:new Date().toISOString(),updatedBy:'system'}; persistentStorage.saveSystemPromptConfig(v); if(hasServiceAccount)await adminDb.collection('appConfig').doc('system').set(v,{merge:true}); systemCache={value:v,expires:now+CONFIG_CACHE_TTL_MS}; return v; }
 export async function updateSystemPrompt(newPrompt:string,updatedBy:string){ if(!newPrompt.trim())throw new Error('System prompt cannot be empty.'); const current=await getSystemPromptConfig(); const v={systemPrompt:newPrompt.trim(),previousPrompts:[...(current.previousPrompts||[]),...(current.systemPrompt&&current.systemPrompt!==newPrompt?[{prompt:current.systemPrompt,updatedAt:current.updatedAt,updatedBy:current.updatedBy}]:[])].slice(-10),updatedAt:new Date().toISOString(),updatedBy}; persistentStorage.saveSystemPromptConfig(v); systemCache={value:v,expires:Date.now()+CONFIG_CACHE_TTL_MS}; if(hasServiceAccount)await adminDb.collection('appConfig').doc('system').set(v,{merge:true}); return v; }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Send, AlertCircle, Info, Check, Mail, Radio } from 'lucide-react';
+import { AlertTriangle, Send, AlertCircle, Info, Check, Mail, Radio, Megaphone } from 'lucide-react';
 import { apiRequest } from '../../lib/api.js';
 import { SectionCard, Skeleton, Spinner, Toggle } from '../../components/ui.js';
 import type { AppConfig } from '../../types.js';
@@ -18,6 +18,15 @@ export const AdminSettings: React.FC = () => {
     maintenanceMessage: 'System is temporarily offline for scheduled maintenance. Please check back soon.',
     premiumPriceInr: 299,
     telegramContactUsername: '@MrNewton_2',
+    adsEnabled: true,
+    adsProvider: 'banner',
+    adsenseClientId: '',
+    adsenseSlotId: '',
+    customAdScript: '',
+    sponsorBannerUrl: '',
+    sponsorLinkUrl: 'https://telegram.me/MrNewton_2',
+    sponsorTitle: 'AbyssGPT Partner',
+    sponsorText: 'Reach thousands of active AI users. Contact to sponsor or upgrade to Pro for zero ads.',
     updatedAt: '',
   });
 
@@ -220,6 +229,164 @@ export const AdminSettings: React.FC = () => {
               <p className="field-hint">Where users go for manual activation</p>
             </div>
           </div>
+        </SectionCard>
+
+        <SectionCard
+          title={
+            <span className="flex items-center gap-2">
+              <Megaphone size={15} style={{ color: 'var(--accent)' }} />
+              <span>Ads &amp; Monetization (Google AdSense / Custom Scripts / Sponsor Banner)</span>
+            </span>
+          }
+          description="Display ads to Free users across the website (Sidebar and Welcome Screen). Pro users enjoy a 100% Ad-Free experience."
+          action={
+            <Toggle
+              checked={config.adsEnabled ?? true}
+              onChange={(checked) => setConfig({ ...config, adsEnabled: checked })}
+              label="Enable Ads"
+            />
+          }
+        >
+          {(config.adsEnabled ?? true) && (
+            <div className="space-y-4">
+              <div>
+                <label className="field-label" htmlFor="ads-provider">
+                  Ad Network / Provider
+                </label>
+                <select
+                  id="ads-provider"
+                  value={config.adsProvider || 'banner'}
+                  onChange={(e) => setConfig({ ...config, adsProvider: e.target.value as 'adsense' | 'custom' | 'banner' })}
+                  className="field"
+                >
+                  <option value="adsense">Google AdSense (Auto Ads &amp; Display Units)</option>
+                  <option value="custom">Custom Ad Script (Monetag, Adsterra, PropellerAds, HTML code)</option>
+                  <option value="banner">Direct Sponsor Banner / Affiliate Promotion</option>
+                </select>
+                <p className="field-hint">Select your monetization source</p>
+              </div>
+
+              {config.adsProvider === 'adsense' && (
+                <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-3.5">
+                  <div className="text-xs font-semibold text-ink">Google AdSense Configuration</div>
+                  <div>
+                    <label className="field-label" htmlFor="adsense-client-id">
+                      AdSense Publisher Client ID
+                    </label>
+                    <input
+                      id="adsense-client-id"
+                      type="text"
+                      value={config.adsenseClientId || ''}
+                      onChange={(e) => setConfig({ ...config, adsenseClientId: e.target.value })}
+                      placeholder="ca-pub-1234567890123456"
+                      className="field"
+                    />
+                    <p className="field-hint">Your publisher ID from Google AdSense console</p>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="adsense-slot-id">
+                      Display Ad Slot ID (Optional)
+                    </label>
+                    <input
+                      id="adsense-slot-id"
+                      type="text"
+                      value={config.adsenseSlotId || ''}
+                      onChange={(e) => setConfig({ ...config, adsenseSlotId: e.target.value })}
+                      placeholder="1234567890"
+                      className="field"
+                    />
+                    <p className="field-hint">Leave blank to let Google AdSense Auto Ads handle placement</p>
+                  </div>
+                </div>
+              )}
+
+              {config.adsProvider === 'custom' && (
+                <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-3.5">
+                  <div className="text-xs font-semibold text-ink">Custom Ad Code (Monetag / Adsterra / Scripts)</div>
+                  <div>
+                    <label className="field-label" htmlFor="custom-ad-script">
+                      Script Tag or HTML Embed Code
+                    </label>
+                    <textarea
+                      id="custom-ad-script"
+                      rows={4}
+                      value={config.customAdScript || ''}
+                      onChange={(e) => setConfig({ ...config, customAdScript: e.target.value })}
+                      placeholder="Paste your ad network script tag or banner HTML here..."
+                      className="field font-mono text-xs"
+                    />
+                    <p className="field-hint">Injected directly for free users; pro users remain completely ad-free.</p>
+                  </div>
+                </div>
+              )}
+
+              {config.adsProvider === 'banner' && (
+                <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-3.5">
+                  <div className="text-xs font-semibold text-ink">Direct Sponsor Banner / Promotion</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="field-label" htmlFor="sponsor-title">
+                        Sponsor Title
+                      </label>
+                      <input
+                        id="sponsor-title"
+                        type="text"
+                        value={config.sponsorTitle || ''}
+                        onChange={(e) => setConfig({ ...config, sponsorTitle: e.target.value })}
+                        placeholder="e.g. Upgrade to Abyss Pro"
+                        className="field"
+                      />
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor="sponsor-link">
+                        Target Click URL
+                      </label>
+                      <input
+                        id="sponsor-link"
+                        type="text"
+                        value={config.sponsorLinkUrl || ''}
+                        onChange={(e) => setConfig({ ...config, sponsorLinkUrl: e.target.value })}
+                        placeholder="https://t.me/yourusername or promo link"
+                        className="field"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="sponsor-desc">
+                      Sponsor Description
+                    </label>
+                    <input
+                      id="sponsor-desc"
+                      type="text"
+                      value={config.sponsorText || ''}
+                      onChange={(e) => setConfig({ ...config, sponsorText: e.target.value })}
+                      placeholder="Short promo text for the ad banner"
+                      className="field"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="sponsor-banner-url">
+                      Banner Image URL (Optional)
+                    </label>
+                    <input
+                      id="sponsor-banner-url"
+                      type="url"
+                      value={config.sponsorBannerUrl || ''}
+                      onChange={(e) => setConfig({ ...config, sponsorBannerUrl: e.target.value })}
+                      placeholder="https://example.com/banner.png (Optional)"
+                      className="field"
+                    />
+                    <p className="field-hint">If left empty, a sleek high-contrast card with title &amp; description is shown</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-md bg-accent/10 border border-accent/20 p-2.5 text-xs text-ink-2 flex items-center justify-between">
+                <span>Free Users: <strong>Ads Enabled</strong></span>
+                <span>Pro / Premium Users: <strong className="text-emerald-400">100% Ad-Free</strong></span>
+              </div>
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard
