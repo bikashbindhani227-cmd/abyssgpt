@@ -108,7 +108,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
   const firstName = extractFirstName(userProfile, firebaseUser);
 
   const dailyUsed = userProfile?.dailyMessageCount ?? 0;
-  const dailyLimit = limits?.dailyLimit ?? 20;
+  const dailyLimit = limits?.dailyLimit ?? 3;
   const isLimitReached = dailyUsed >= dailyLimit && userProfile?.plan !== 'premium';
 
   return (

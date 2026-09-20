@@ -6,7 +6,7 @@ import type { TierLimitsConfig } from '../../types.js';
 
 export const AdminLimits: React.FC = () => {
   const [limits, setLimits] = useState<TierLimitsConfig>({
-    free: { dailyLimit: 20, rateLimit: 5, contextLimit: 10 },
+    free: { dailyLimit: 3, rateLimit: 5, contextLimit: 10 },
     premium: { dailyLimit: 200, rateLimit: 30, contextLimit: 30 },
   });
   const [loading, setLoading] = useState(true);

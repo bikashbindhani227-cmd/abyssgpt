@@ -61,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         plan: 'free',
         isAdmin: false,
         isBanned: false,
-        dailyMessageLimit: 20,
+        dailyMessageLimit: 3,
         dailyMessageCount: 0,
         lastUsageDate: new Date().toISOString().slice(0, 10),
         rateLimitPerMinute: 5,
@@ -70,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         lastActiveAt: new Date().toISOString(),
       });
       setLimits({
-        dailyLimit: 20,
+        dailyLimit: 3,
         rateLimit: 5,
         contextLimit: 10,
       });

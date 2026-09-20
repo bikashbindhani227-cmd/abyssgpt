@@ -1,4 +1,4 @@
-import { searchPerplexityWeb } from './perplexitySearchService.js';
+import { searchUnifiedWeb } from './tavilyService.js';
 import { readUrlWithJina } from './jinaService.js';
 import { runCodeInDaytona, runCommandInDaytona, runProjectInDaytona } from './daytonaService.js';
 import { stripCodeFences } from './toolRegistry.js';
@@ -31,6 +31,7 @@ function normalizeLanguage(value: unknown): 'python' | 'javascript' | 'typescrip
 export function createRawToolExecutor(
   todoManager?: TodoManager,
   projectStateManager?: ProjectStateManager,
+  userPlan: 'free' | 'premium' = 'free',
 ): AgentToolExecutor {
   return async (name, args) => {
     if (name === 'todo_write') {
@@ -44,7 +45,7 @@ export function createRawToolExecutor(
     if (name === 'web_search') {
       const query = String(args.query || '').trim();
       if (!query) return 'No search query was provided.';
-      const result = await searchPerplexityWeb(query);
+      const result = await searchUnifiedWeb(query, userPlan);
       if (!result) throw new Error('Live web research failed or is unavailable. Do not claim that live search succeeded.');
       if (!result.results.length && !result.answer) return 'Live web research completed but returned no results.';
       const linksSection = result.results?.length
@@ -185,6 +186,7 @@ export function createBudgetedToolExecutor(
   signal?: AbortSignal,
   todoManager?: TodoManager,
   projectStateManager?: ProjectStateManager,
+  userPlan: 'free' | 'premium' = 'free',
 ): AgentToolExecutor {
   const budget = plan.budget;
 
@@ -307,7 +309,7 @@ export function createBudgetedToolExecutor(
       if (name === 'web_search') {
         const query = String(args.query || '').trim();
         if (!query) return 'No search query was provided.';
-        const searchResult = await searchPerplexityWeb(query, {
+        const searchResult = await searchUnifiedWeb(query, userPlan, {
           maxResults: budget.MAX_SEARCH_RESULTS,
           timeoutMs: perCallTimeout,
           searchDepth: plan.classification.category === 'research' && plan.classification.complexity >= 7 ? 'advanced' : 'basic',

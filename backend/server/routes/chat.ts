@@ -150,12 +150,14 @@ async function runAgentStream(
     writeTodoEvent(res, todos);
   });
 
+  const userPlan = req.user?.plan === 'premium' ? 'premium' : 'free';
   const budgetedExecutor = createBudgetedToolExecutor(
     budgetPlan,
     tracker,
     abortController.signal,
     todoManager,
     projectStateManager,
+    userPlan,
   );
   const uiExecutor = createUiExecutor(res, budgetedExecutor, abortController.signal);
 

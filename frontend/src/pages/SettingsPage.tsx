@@ -352,7 +352,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
                   Daily messages
                 </div>
                 <div className="tabular mt-1.5 text-xl font-bold text-ink">
-                  {userProfile?.dailyMessageCount ?? 0} / {limits?.dailyLimit ?? 20}
+                  {userProfile?.dailyMessageCount ?? 0} / {limits?.dailyLimit ?? 3}
                 </div>
                 <div className="mt-0.5 text-[10.5px] text-ink-3">Resets daily at 00:00 UTC</div>
               </div>
