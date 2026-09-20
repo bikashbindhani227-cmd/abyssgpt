@@ -7,6 +7,10 @@ interface ChatComposerProps {
   onStop: () => void;
   isStreaming: boolean;
   disabled?: boolean;
+  isLimitReached?: boolean;
+  dailyLimit?: number;
+  dailyUsed?: number;
+  onOpenPremium?: () => void;
 }
 
 const MAX_HEIGHT = 200;
@@ -42,6 +46,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   onStop,
   isStreaming,
   disabled = false,
+  isLimitReached = false,
+  dailyLimit = 3,
+  dailyUsed = 0,
+  onOpenPremium,
 }) => {
   const {
     pendingAttachments,
@@ -111,6 +119,25 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
   return (
     <div className="composer-wrap">
+      {isLimitReached && !isStreaming && (
+        <div className="composer-limit-banner" role="status">
+          <div className="composer-limit-info">
+            <Sparkles size={14} className="composer-limit-icon" />
+            <span className="composer-limit-text">
+              Daily message limit reached ({Math.max(dailyUsed, dailyLimit)}/{dailyLimit} used today)
+            </span>
+          </div>
+          {onOpenPremium && (
+            <button
+              type="button"
+              className="composer-limit-btn"
+              onClick={onOpenPremium}
+            >
+              Upgrade to Pro
+            </button>
+          )}
+        </div>
+      )}
       {attachError && (
         <div style={{
           padding: '6px 12px',
@@ -145,7 +172,14 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           ))}
         </div>
       )}
-      <div className={`composer${focused ? ' focused' : ''}${disabled && !isStreaming ? ' disabled' : ''}`}>
+      <div
+        className={`composer${focused ? ' focused' : ''}${disabled && !isStreaming ? ' disabled' : ''}`}
+        onClick={() => {
+          if (disabled && !isStreaming && isLimitReached && onOpenPremium) {
+            onOpenPremium();
+          }
+        }}
+      >
         <textarea
           ref={textareaRef}
           rows={1}
@@ -159,7 +193,13 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               handleSend();
             }
           }}
-          placeholder={disabled && !isStreaming ? 'Daily message limit reached' : 'Ask anything…'}
+          placeholder={
+            disabled && !isStreaming
+              ? isLimitReached
+                ? 'Daily message limit reached. Upgrade to Pro for 200 messages/day.'
+                : 'Messaging is disabled'
+              : 'Ask anything…'
+          }
           aria-label="Message AbyssGPT"
           className="abyss-input"
           disabled={disabled && !isStreaming}

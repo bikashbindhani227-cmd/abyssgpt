@@ -157,18 +157,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
               );
             })}
 
-            {isLimitReached && !isStreaming && (
-              <div className="inline-error" role="status" style={{ marginBottom: 8 }}>
-                <Sparkles size={16} style={{ flex: '0 0 auto' }} />
-                <span className="flex-1">
-                  You've used all {dailyLimit} free messages for today. Upgrade to Pro for 200 daily messages.
-                </span>
-                <button type="button" className="retry-btn" onClick={onOpenPremium}>
-                  Upgrade
-                </button>
-              </div>
-            )}
-
             {(messages.length > 0 || isStreaming) && (
               <div className="chat-bottom-spacer" aria-hidden="true" />
             )}
@@ -181,6 +169,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onOpenPremium, onToast }) =>
         onStop={stopGenerating}
         isStreaming={isStreaming}
         disabled={isLimitReached}
+        isLimitReached={isLimitReached}
+        dailyLimit={dailyLimit}
+        dailyUsed={dailyUsed}
+        onOpenPremium={onOpenPremium}
       />
     </>
   );
