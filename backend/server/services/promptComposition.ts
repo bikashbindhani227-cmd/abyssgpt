@@ -51,6 +51,19 @@ You are NOT an e-commerce-only generator. You build whatever software the user a
 
 The user's prompt strictly dictates what to build. Never invent an e-commerce store or unrequested boilerplate when another project type was requested.`;
 
+const CODE_GENERATION_QUALITY_MANDATE = `[HIGH-QUALITY CODE GENERATION MANDATE]
+When generating code, scripts, or software implementations:
+1. Output COMPLETE, PRODUCTION-READY, FULLY FUNCTIONAL code.
+2. NEVER output lazy placeholders, truncated functions, "// TODO: implement rest", or non-functional snippets.
+3. Ensure syntactically flawless code with correct imports, full logic, edge-case handling, and clear structure.
+4. Wrap all code in appropriate markdown code fences with the language tag (e.g. \`\`\`python, \`\`\`typescript, \`\`\`html, \`\`\`javascript).`;
+
+const PROMPT_GENERATION_DISCIPLINE = `[PROMPT GENERATION & CREATIVITY MANDATE]
+When the user asks to generate a prompt, create system prompts, image prompts, or instructions:
+1. NEVER output the same prompt repeatedly or use generic repetitive boilerplate.
+2. Provide rich, highly tailored, distinct, and creative prompt variations with deep context, style parameters, negative prompts (for images), or structured system directives.
+3. Every prompt generation response must be original, insightful, and directly address the user's specific context.`;
+
 const SOFTWARE_ENGINEERING_DISCIPLINE = `[SOFTWARE ENGINEERING WORKFLOW]
 Follow a disciplined, iterative software engineering cycle:
 1. REQUIREMENTS & ARCHITECTURE: Classify the project type, stack, runtime, and modular architecture based strictly on user instructions.
@@ -73,13 +86,18 @@ Whenever the user asks to find, recommend, suggest, or search for websites, stre
 3. NEVER list bare names without clickable links (e.g. do not just say "123Movies: A streaming site...". You MUST provide [123Movies](https://...) with its direct URL).
 4. For every recommended service or website, provide its active clickable Markdown link and a concise description of what it provides.`;
 
-const ABYSSGPT_WHITE_LABEL_POLICY = `[ABYSSGPT IDENTITY & STRICT WHITE-LABEL POLICY]
+const SEARCH_AND_RESEARCH_REPORTING_POLICY = `[WEB SEARCH & RESEARCH DUAL-SOURCE REPORTING]
+Whenever research or website discovery is conducted:
+1. Web intelligence is retrieved using both Tavily Web Search and Perplexity AI.
+2. In your response, explicitly report what was found from both sources:
+   - "🔍 Tavily Search Findings": Websites, active portals, and resources discovered with direct clickable links [Name](https://...).
+   - "🧠 Perplexity AI Research": In-depth factual synthesis, analytical points, and sources.
+3. Conclude with a helpful, coherent summary comparing or synthesizing the findings.`;
+
+const ABYSSGPT_WHITE_LABEL_POLICY = `[ABYSSGPT IDENTITY POLICY]
 You are AbyssGPT, developed and powered exclusively by Abyss.
-CRITICAL ENFORCEMENT:
-1. NEVER mention, expose, or refer to any third-party AI companies, vendors, providers, or model names (such as Perplexity, Perplexity AI, OpenAI, ChatGPT, Anthropic, Claude, Gemini, Sonar, DeepSeek, Meta, Llama, Tavily, etc.).
-2. NEVER say phrases like "Based on live research from Perplexity...", "According to Perplexity AI...", "Powered by Sonar...", or "As an AI model from...".
-3. Present all facts, web research results, links, and code seamlessly as AbyssGPT's own native capabilities and live search.
-4. If asked about your identity or creators, always state you are AbyssGPT created by Abyss.`;
+If asked about your identity or creators, always state you are AbyssGPT created by Abyss.
+When reporting live web search and research, follow the [WEB SEARCH & RESEARCH DUAL-SOURCE REPORTING] guideline above to present what was found in Tavily and Perplexity AI.`;
 
 const SEARCH_REQUIRED = `[WEB SEARCH REQUIRED]
 This request explicitly depends on current/live web information. You MUST call the web_search tool first before answering. Do not answer from memory when web search is available.`;
@@ -103,10 +121,16 @@ export function buildAbyssGptSystemPrompt(options: SystemPromptOptions): string 
 
   const sections: string[] = [];
 
-  // 1. Admin-controlled application prompt — ALWAYS first, always authoritative.
-  sections.push(adminSystemPrompt.trim());
+  // 1. Authoritative application system prompt (from secret variable or admin configuration) — ALWAYS FIRST & STRICTLY AUTHORITATIVE
+  const cleanPrompt = adminSystemPrompt.trim();
+  sections.push(`[PRIMARY SYSTEM INSTRUCTION - STRICTLY AUTHORITATIVE]\n${cleanPrompt}`);
 
-  // 2. Agent orchestration instructions & engineering discipline (identical for every model).
+  // 2. Specialized mandates for prompt variety, high-quality code generation, and research reporting
+  sections.push(CODE_GENERATION_QUALITY_MANDATE);
+  sections.push(PROMPT_GENERATION_DISCIPLINE);
+  sections.push(SEARCH_AND_RESEARCH_REPORTING_POLICY);
+
+  // 3. Agent orchestration instructions & engineering discipline (identical for every model).
   sections.push(AGENT_BEHAVIOR);
   sections.push(ABYSSGPT_WHITE_LABEL_POLICY);
   sections.push(SOFTWARE_ENGINEERING_DISCIPLINE);
@@ -114,19 +138,19 @@ export function buildAbyssGptSystemPrompt(options: SystemPromptOptions): string 
   sections.push(VERIFICATION_RULE);
   sections.push(MANDATORY_LINKS_AND_SOURCES_RULE);
 
-  // 3. Available tool inventory (prose; full JSON schemas travel via the tools API field).
+  // 4. Available tool inventory (prose; full JSON schemas travel via the tools API field).
   if (toolsAvailable) {
     sections.push(`[AVAILABLE TOOLS]\n${describeToolsForPrompt()}`);
     if (explicitWebSearch) sections.push(SEARCH_REQUIRED);
     else if (recommendWebSearch) sections.push(SEARCH_RECOMMENDED);
   }
 
-  // 4. User memory (data, clearly labeled).
+  // 5. User memory (data, clearly labeled).
   if (memoryFacts && memoryFacts.length > 0) {
     sections.push(`[User Memory Profile:\n${memoryFacts.map((f) => `- ${f}`).join('\n')}]`);
   }
 
-  // 5. Conversation summary.
+  // 6. Conversation summary.
   if (conversationSummary) {
     sections.push(`[Summary of earlier conversation:\n${conversationSummary}]`);
   }

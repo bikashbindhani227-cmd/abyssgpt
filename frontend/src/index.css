@@ -2668,6 +2668,29 @@ select.field { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xm
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text-3);
 }
+.ad-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ad-promote-btn {
+  background: transparent;
+  border: none;
+  font-size: 10px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 550;
+  transition: all 0.15s ease;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.ad-promote-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
 .ad-hide-btn {
   background: transparent;
   border: none;

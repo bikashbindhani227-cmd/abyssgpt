@@ -104,6 +104,12 @@ export interface ModelAdapterConfig {
   baseUrl: string;
   apiKey: string;
   timeoutMs?: number;
+  temperature?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  extraHeaders?: Record<string, string>;
+  displayName?: string;
+  fallbackConfig?: ModelAdapterConfig;
 }
 
 export function normalizeAiCreditsBaseUrl(rawUrl?: string): string {
@@ -128,6 +134,74 @@ export function resolveAdapterConfigFromEnv(): ModelAdapterConfig {
     apiKey: process.env.AICREDITS_API_KEY?.trim() || '',
     baseUrl: normalizeAiCreditsBaseUrl(process.env.AICREDITS_BASE_URL),
     timeoutMs: Number.isFinite(envTimeout) && envTimeout > 0 ? Math.max(5_000, Math.min(Math.floor(envTimeout), 180_000)) : 60_000,
+  };
+}
+
+export function resolveAdapterConfigForTask(
+  category: string,
+  signals: string[] = [],
+): ModelAdapterConfig {
+  const isCoding =
+    category === 'coding' ||
+    signals.includes('coding_or_debug') ||
+    signals.includes('full_project_generation') ||
+    signals.includes('code_block_present');
+  const isPromptGen = signals.includes('prompt_generation');
+  const defaultCfg = resolveAdapterConfigFromEnv();
+
+  if (isCoding) {
+    const openRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
+    const codingModelId = (process.env.CODING_MODEL_ID || 'poolside/laguna-s-2.1:free').trim();
+    const openRouterBaseUrl = (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
+
+    const fallbackCfg: ModelAdapterConfig = {
+      ...defaultCfg,
+      temperature: 0.2,
+      displayName: defaultCfg.modelId,
+    };
+
+    if (openRouterKey) {
+      return {
+        modelId: codingModelId,
+        apiKey: openRouterKey,
+        baseUrl: openRouterBaseUrl,
+        timeoutMs: 60000,
+        temperature: 0.2,
+        displayName: `${codingModelId} (OpenRouter)`,
+        extraHeaders: {
+          'HTTP-Referer': 'https://abyssgpt.app',
+          'X-Title': 'AbyssGPT',
+        },
+        fallbackConfig: fallbackCfg,
+      };
+    }
+
+    return {
+      modelId: codingModelId,
+      apiKey: defaultCfg.apiKey,
+      baseUrl: defaultCfg.baseUrl,
+      timeoutMs: 60000,
+      temperature: 0.2,
+      displayName: `${codingModelId} (AI Credits / OpenRouter)`,
+      fallbackConfig: fallbackCfg,
+    };
+  }
+
+  if (isPromptGen) {
+    return {
+      ...defaultCfg,
+      temperature: 0.85,
+      presencePenalty: 0.35,
+      frequencyPenalty: 0.35,
+      displayName: defaultCfg.modelId,
+    };
+  }
+
+  return {
+    ...defaultCfg,
+    temperature: 0.7,
+    presencePenalty: 0.1,
+    displayName: defaultCfg.modelId,
   };
 }
 export interface GenerateCompletionOptions {
@@ -354,7 +428,43 @@ async function requestWithCapabilityFallback(
   signal?: AbortSignal,
   budgetRemainingMs?: number,
 ): Promise<Response> {
-  const response = await requestChatCompletion(config, buildBody({ toolChoice: true, tools: true }), signal, budgetRemainingMs);
+  let response: Response;
+  try {
+    response = await requestChatCompletion(config, buildBody({ toolChoice: true, tools: true }), signal, budgetRemainingMs);
+  } catch (err) {
+    if (config.fallbackConfig && !signal?.aborted) {
+      console.warn(`[model-adapter] Primary model ${config.modelId} threw: ${err instanceof Error ? err.message : String(err)}. Falling back to ${config.fallbackConfig.modelId}...`);
+      return requestWithCapabilityFallback(
+        config.fallbackConfig,
+        (caps) => {
+          const b = buildBody(caps);
+          return { ...b, model: config.fallbackConfig!.modelId };
+        },
+        signal,
+        budgetRemainingMs,
+      );
+    }
+    throw err;
+  }
+
+  if (!response.ok && config.fallbackConfig && (response.status === 429 || response.status === 404 || response.status === 401 || response.status >= 500)) {
+    console.warn(`[model-adapter] Primary model ${config.modelId} failed with ${response.status}. Attempting fallback to ${config.fallbackConfig.modelId}...`);
+    try {
+      const fbResponse = await requestWithCapabilityFallback(
+        config.fallbackConfig,
+        (caps) => {
+          const b = buildBody(caps);
+          return { ...b, model: config.fallbackConfig!.modelId };
+        },
+        signal,
+        budgetRemainingMs,
+      );
+      if (fbResponse.ok) return fbResponse;
+    } catch (fbErr) {
+      console.warn(`[model-adapter] Fallback model ${config.fallbackConfig.modelId} failed:`, fbErr);
+    }
+  }
+
   if (response.ok) return response;
 
   if (response.status >= 400 && response.status < 500) {
@@ -482,6 +592,9 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
     const protocolMessages = messagesForProtocol(messages);
     const body = (caps: { toolChoice: boolean; tools: boolean }): Record<string, unknown> => {
       const b: Record<string, unknown> = { model: config.modelId, messages: protocolMessages, stream: false };
+      if (typeof config.temperature === 'number') b.temperature = config.temperature;
+      if (typeof config.presencePenalty === 'number') b.presence_penalty = config.presencePenalty;
+      if (typeof config.frequencyPenalty === 'number') b.frequency_penalty = config.frequencyPenalty;
       if (tools.length && caps.tools) {
         b.tools = tools;
         if (caps.toolChoice) {
@@ -506,11 +619,17 @@ export function createModelAdapter(rawConfig: ModelAdapterConfig = resolveAdapte
     try {
       response = await requestWithCapabilityFallback(
         config,
-        () => ({
-          model: config.modelId,
-          messages: messagesForProtocol(messages, { isStreaming: true }),
-          stream: true,
-        }),
+        () => {
+          const b: Record<string, unknown> = {
+            model: config.modelId,
+            messages: messagesForProtocol(messages, { isStreaming: true }),
+            stream: true,
+          };
+          if (typeof config.temperature === 'number') b.temperature = config.temperature;
+          if (typeof config.presencePenalty === 'number') b.presence_penalty = config.presencePenalty;
+          if (typeof config.frequencyPenalty === 'number') b.frequency_penalty = config.frequencyPenalty;
+          return b;
+        },
         options.signal,
         options.budgetRemainingMs,
       );

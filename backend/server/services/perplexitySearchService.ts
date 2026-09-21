@@ -138,11 +138,6 @@ export async function searchPerplexityWeb(
         return null;
       }
 
-      // Scrub any third-party provider or engine names from the search summary
-      content = content
-        .replace(/\b(?:perplexity\s*ai|perplexity\.ai|perplexity)\b/gi, 'Live Web Search')
-        .replace(/\b(?:sonar-pro|sonar-reasoning|sonar|sonar-medium|sonar-small)\b/gi, 'web search engine');
-
       // Extract markdown links [Title](https://...) from the content (excluding provider links)
       const markdownLinks: Array<{ title: string; url: string }> = [];
       const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s<>"')]+)\)/g;

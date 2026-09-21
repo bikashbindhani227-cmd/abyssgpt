@@ -29,7 +29,12 @@ import {
   createBudgetForRequest,
   BudgetTracker,
 } from '../services/agentBudget.js';
-import { createModelAdapter, ModelError, type ChatMessagePayload } from '../services/modelAdapter.js';
+import {
+  createModelAdapter,
+  resolveAdapterConfigForTask,
+  ModelError,
+  type ChatMessagePayload,
+} from '../services/modelAdapter.js';
 import { runAgentOrchestration } from '../services/agentOrchestrator.js';
 import { buildAbyssGptSystemPrompt } from '../services/promptComposition.js';
 import { TodoManager, type Todo } from '../services/todoManager.js';
@@ -161,8 +166,25 @@ async function runAgentStream(
   );
   const uiExecutor = createUiExecutor(res, budgetedExecutor, abortController.signal);
 
-  const adapter = createModelAdapter();
+  const adapterConfig = resolveAdapterConfigForTask(
+    budgetPlan.classification.category,
+    budgetPlan.classification.signals,
+  );
+  const adapter = createModelAdapter(adapterConfig);
   const modelUsed = adapter.modelId() || getConfiguredModelId() || 'not-configured';
+  const modelDisplayName = adapterConfig.displayName || modelUsed;
+
+  if (budgetPlan.classification.category === 'coding') {
+    writeSse(res, {
+      type: 'thinking',
+      text: `Using dedicated coding engine: ${modelDisplayName}`,
+    });
+  } else if (budgetPlan.classification.category === 'research' || budgetPlan.webSearchEnabled) {
+    writeSse(res, {
+      type: 'thinking',
+      text: `Researching with ${modelDisplayName} (using Tavily + Perplexity AI)`,
+    });
+  }
 
   // Automatic tool bootstrap: live web requests are grounded server-side
   // before the first model response. Explicit URLs are read with Jina. This
@@ -173,19 +195,20 @@ async function runAgentStream(
   let preSearchedWithPerplexity = false;
 
 function scrubVendorMentions(text: string): string {
-  if (!text) return '';
-  return text
-    .replace(/\b(?:perplexity\s*ai|perplexity\.ai|perplexity)\b/gi, 'AbyssGPT Live Search')
-    .replace(/\b(?:sonar-pro|sonar-reasoning|sonar|sonar-medium|sonar-small)\b/gi, 'web search engine');
+  // Preserve Tavily and Perplexity mentions as explicitly commanded by the user
+  return text;
 }
 
   if (budgetPlan.useAgent && budgetPlan.webSearchEnabled && !urls.length) {
-    writeSse(res, { type: 'thinking', text: 'Searching the live web…' });
+    writeSse(res, { type: 'thinking', text: 'Searching Tavily & Perplexity AI in real-time…' });
     const query = lastUserText.replace(/\s+/g, ' ').trim().slice(0, 220);
     const result = await uiExecutor('web_search', { query }, abortController.signal);
     automaticToolContext.push(
-      '[LIVE WEB RESEARCH RESULTS — REAL-TIME KNOWLEDGE]\n' +
-      'MANDATORY INSTRUCTION: You MUST use and reference these factual findings. Present them authoritatively as your own live findings. When recommending websites, tools, services, resources, movie/stream sites, or links, you MUST provide active, clickable Markdown links [Website Name](https://...) using the verified domains and URLs below. Never output bare unlinked names.\n\n' +
+      '[LIVE WEB RESEARCH RESULTS — TAVILY & PERPLEXITY AI]\n' +
+      'MANDATORY USER INSTRUCTION: You MUST explicitly report what findings were discovered by Tavily and what findings were discovered by Perplexity AI.\n' +
+      '1. Provide a "🔍 Tavily Search Findings" section detailing discovered websites and direct clickable links.\n' +
+      '2. Provide a "🧠 Perplexity AI Real-Time Research" section detailing the deep research analysis and insights.\n' +
+      '3. When recommending websites, tools, services, movie/stream sites, or links, you MUST provide active, clickable Markdown links [Website Name](https://...) using the verified domains and URLs. Never output bare unlinked names.\n\n' +
       result,
     );
     preSearchedWithPerplexity = true;
@@ -484,6 +507,7 @@ chatRouter.post(
 
       writeSse(res, {
         type: 'done',
+        model: modelUsed,
         messageId: assistantMsg.id,
         conversationId: conv.id,
       });
@@ -604,7 +628,7 @@ chatRouter.post(
       modelUsed = result.modelUsed;
 
       const assistantMsg = await addMessage(user.uid, conv.id, 'assistant', accumulatedText, modelUsed);
-      writeSse(res, { type: 'done', messageId: assistantMsg.id, conversationId: conv.id });
+      writeSse(res, { type: 'done', model: modelUsed, messageId: assistantMsg.id, conversationId: conv.id });
       if (!res.writableEnded) res.end();
     } catch (streamErr: unknown) {
       emitModelStreamError(res, streamErr);

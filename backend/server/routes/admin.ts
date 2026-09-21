@@ -21,7 +21,8 @@ import {
   setUserCustomLimits,
 } from '../services/userService.js';
 import { getEmailConfigDetails, sendTestEmail, sendActiveNotificationEmail } from '../services/emailService.js';
-import type { UserProfile, AdminDashboardStats } from '../../types.js';
+import { persistentStorage } from '../services/storage.js';
+import type { UserProfile, AdminDashboardStats, UserAdSubmission } from '../../types.js';
 
 export const adminRouter = Router();
 
@@ -445,4 +446,67 @@ adminRouter.post('/broadcast-active', async (req: AuthenticatedRequest, res: Res
     res.status(500).json({ error: errorMsg });
   }
 });
+
+// --- User Ad Submissions Management ---
+// Get all ad submissions
+adminRouter.get('/ads', requireAdmin, async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const ads = persistentStorage.getAdSubmissions();
+    res.json({ ads });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to fetch ad submissions';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Update ad submission (status, adminNote, or activate as live sponsor banner)
+adminRouter.patch('/ads/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote, setAsLiveSponsor } = req.body;
+    const existing = persistentStorage.getAdSubmission(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Ad submission not found' });
+      return;
+    }
+
+    const updates: Partial<UserAdSubmission> = {};
+    if (status) updates.status = status;
+    if (adminNote !== undefined) updates.adminNote = String(adminNote);
+
+    // If admin chooses to make this ad the active live sponsor banner on AbyssGPT:
+    if (setAsLiveSponsor) {
+      updates.status = 'active';
+      const currentConfig = await getAppSettingsConfig();
+      await updateAppSettingsConfig({
+        ...currentConfig,
+        adsEnabled: true,
+        adsProvider: 'banner',
+        sponsorTitle: existing.title,
+        sponsorText: existing.description,
+        sponsorLinkUrl: existing.linkUrl,
+        sponsorBannerUrl: existing.bannerUrl || '',
+      });
+    }
+
+    const updated = persistentStorage.updateAdSubmission(id, updates);
+    res.json({ success: true, ad: updated });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to update ad submission';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Delete ad submission
+adminRouter.delete('/ads/:id', requireAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const success = persistentStorage.deleteAdSubmission(id);
+    res.json({ success });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to delete ad submission';
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 

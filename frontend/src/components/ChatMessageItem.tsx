@@ -67,7 +67,14 @@ export const ChatMessageItemBase: React.FC<ChatMessageItemProps> = ({
       )}
 
       <div className="msg-body">
-        <div className="msg-role">{isUser ? 'You' : 'AbyssGPT'}</div>
+        <div className="msg-role flex items-center gap-2">
+          <span>{isUser ? 'You' : 'AbyssGPT'}</span>
+          {!isUser && message.model && (
+            <span className="text-[11px] font-normal tracking-wide px-2 py-0.5 rounded-full bg-surface-raised/80 border border-border/50 text-text-secondary">
+              {message.model}
+            </span>
+          )}
+        </div>
 
         {hasAttachments && (
           <div className="composer-attachments" style={{ padding: 0, marginBottom: 8 }}>
@@ -179,6 +186,7 @@ export const ChatMessageItem = React.memo(ChatMessageItemBase, (prev, next) =>
   prev.message.id === next.message.id &&
   prev.message.clientKey === next.message.clientKey &&
   prev.message.content === next.message.content &&
+  prev.message.model === next.message.model &&
   prev.message.isError === next.message.isError &&
   prev.message.errorText === next.message.errorText &&
   prev.userInitial === next.userInitial &&

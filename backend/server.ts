@@ -10,7 +10,7 @@ import { userRouter } from './server/routes/user.js';
 import { memoryRouter } from './server/routes/memory.js';
 import { adminRouter } from './server/routes/admin.js';
 import { getAppSettingsConfig } from './server/services/configService.js';
-import { ensureFirebaseAuthSettings } from './server/config/firebaseAdmin.js';
+import { ensureFirebaseAuthSettings, authorizeDomains } from './server/config/firebaseAdmin.js';
 import { botAndDdosProtection } from './server/middleware/botProtection.js';
 dotenv.config();
 
@@ -54,7 +54,31 @@ app.get('/robots.txt', (_req, res) => {
 });
 
 app.get('/health', (_req,res)=>res.json({ status:'ok', service:'abyssgpt-backend', timestamp:new Date().toISOString(), aiProvider:'AI Credits', modelConfigured:Boolean(process.env.MODEL_ID), firebaseConfigured:Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) }));
-app.get('/api/settings', async (_req,res)=>{
+app.post('/api/auth/authorize-domain', async (req, res) => {
+  try {
+    const rawDomain = req.body?.domain || req.headers['x-forwarded-host'] || req.headers.host || '';
+    const domain = String(rawDomain).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/:\d+$/, '').replace(/\/.*$/, '');
+    if (!domain || domain === 'localhost' || domain === '127.0.0.1') {
+      return res.json({ success: true, authorized: true });
+    }
+    const updated = await authorizeDomains([domain]);
+    return res.json({ success: true, domain, authorized: updated.includes(domain) });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to authorize domain', details: String(err) });
+  }
+});
+
+app.get('/api/settings', async (req, res) => {
+  // Opportunistically register visiting domain in the background
+  try {
+    const clientHost = req.headers['x-forwarded-host'] || req.headers.host || req.headers.origin || '';
+    const cleanHost = String(clientHost).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/:\d+$/, '').replace(/\/.*$/, '');
+    if (cleanHost && cleanHost !== 'localhost' && cleanHost !== '127.0.0.1' && !cleanHost.includes(':')) {
+      authorizeDomains([cleanHost]).catch(() => {});
+    }
+  } catch {
+    // Non-blocking
+  }
   try {
     const s = await getAppSettingsConfig();
     res.json({

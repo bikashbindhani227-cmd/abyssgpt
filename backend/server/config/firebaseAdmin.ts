@@ -47,6 +47,57 @@ if (!existingApps.length) {
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp, databaseId);
 
+export async function authorizeDomains(domains: string[]): Promise<string[]> {
+  try {
+    const token = await adminApp.options.credential?.getAccessToken();
+    if (!token?.access_token) return [];
+
+    const res = await fetch(`https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`, {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+    if (!res.ok) return [];
+
+    const currentConfig = (await res.json()) as { authorizedDomains?: string[]; signIn?: { email?: { enabled?: boolean } } };
+    const currentDomains = currentConfig.authorizedDomains || [];
+
+    const cleaned = domains
+      .map((d) =>
+        d
+          .trim()
+          .toLowerCase()
+          .replace(/^https?:\/\//, '')
+          .replace(/:\d+$/, '')
+          .replace(/\/.*$/, '')
+      )
+      .filter((d) => d && !d.includes('/') && d.length > 2);
+
+    const missing = cleaned.filter((d) => !currentDomains.includes(d));
+    if (missing.length === 0) {
+      return currentDomains;
+    }
+
+    const mergedDomains = Array.from(new Set([...currentDomains, ...missing]));
+    await fetch(
+      `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config?updateMask=authorizedDomains`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          authorizedDomains: mergedDomains,
+        }),
+      }
+    );
+    console.log('Firebase Auth automatically registered new domains:', missing);
+    return mergedDomains;
+  } catch (err) {
+    console.warn('Could not auto-register domains in Firebase Auth:', err);
+    return [];
+  }
+}
+
 export async function ensureFirebaseAuthSettings(): Promise<void> {
   try {
     const token = await adminApp.options.credential?.getAccessToken();

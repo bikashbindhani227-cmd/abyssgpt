@@ -15,25 +15,31 @@ import {
   ShieldCheck,
   Shield,
   EyeOff,
+  Megaphone,
+  PlusCircle,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { useTheme } from '../contexts/ThemeContext.js';
 import { apiRequest } from '../lib/api.js';
 import { SectionCard, Spinner, Toggle } from '../components/ui.js';
-import type { UserMemory } from '../types.js';
+import { UserAdModal } from '../components/UserAdModal.js';
+import type { UserMemory, UserAdSubmission } from '../types.js';
 
 interface SettingsPageProps {
   onBack: () => void;
   onOpenPremium: () => void;
 }
 
-type SettingsTab = 'profile' | 'appearance' | 'memory' | 'plan';
+type SettingsTab = 'profile' | 'appearance' | 'memory' | 'plan' | 'advertise';
 
 const TABS: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { id: 'profile', label: 'Account', icon: User },
   { id: 'appearance', label: 'Appearance', icon: Moon },
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'plan', label: 'Plan & Limits', icon: Gauge },
+  { id: 'advertise', label: 'Advertise with Us', icon: Megaphone },
 ];
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremium }) => {
@@ -56,12 +62,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
   const [loadingMemory, setLoadingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
 
+  // Advertise tab state
+  const [showAdModal, setShowAdModal] = useState(false);
+  const [userAds, setUserAds] = useState<UserAdSubmission[]>([]);
+  const [loadingUserAds, setLoadingUserAds] = useState(false);
+
   useEffect(() => {
     if (activeTab === 'memory') {
       loadMemory();
+    } else if (activeTab === 'advertise') {
+      loadUserAds();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  const loadUserAds = async () => {
+    setLoadingUserAds(true);
+    try {
+      const res = await apiRequest<{ ads: UserAdSubmission[] }>('/api/user/ads');
+      setUserAds(res.ads || []);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingUserAds(false);
+    }
+  };
 
   const loadMemory = async () => {
     setLoadingMemory(true);
@@ -531,7 +556,171 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, onOpenPremiu
             )}
           </SectionCard>
         )}
+
+        {/* Advertise with Us Tab */}
+        {activeTab === 'advertise' && (
+          <SectionCard className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-line pb-4">
+              <div>
+                <h3 className="text-base font-semibold text-ink flex items-center gap-2">
+                  <Megaphone size={18} style={{ color: 'var(--accent)' }} />
+                  Self-Serve Advertising & Sponsorships
+                </h3>
+                <p className="text-xs text-ink-3 mt-1">
+                  Promote your brand, SaaS app, YouTube channel, or Telegram community to active AI builders on AbyssGPT.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowAdModal(true)}
+                className="btn btn-primary btn-sm flex items-center gap-2 self-start sm:self-auto shrink-0 shadow-sm"
+              >
+                <PlusCircle size={14} />
+                Submit New Ad
+              </button>
+            </div>
+
+            {/* Value highlights */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl border border-line bg-surface-2 space-y-1">
+                <div className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                  <Sparkles size={13} style={{ color: 'var(--accent)' }} />
+                  Targeted Visibility
+                </div>
+                <p className="text-[11.5px] text-ink-3">
+                  Prominent placement in the left sidebar and initial chat screen.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-line bg-surface-2 space-y-1">
+                <div className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                  <Clock size={13} style={{ color: 'var(--accent)' }} />
+                  Flexible Durations
+                </div>
+                <p className="text-[11.5px] text-ink-3">
+                  Choose from 7-day, 15-day, or 30-day continuous featured placements.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-line bg-surface-2 space-y-1">
+                <div className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                  <Check size={13} style={{ color: 'var(--accent)' }} />
+                  Live Preview & Direct Links
+                </div>
+                <p className="text-[11.5px] text-ink-3">
+                  Clickable banners routed straight to your website, Telegram, or channel.
+                </p>
+              </div>
+            </div>
+
+            {/* User's Campaigns List */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-ink uppercase tracking-wider">
+                  Your Submitted Campaigns ({userAds.length})
+                </h4>
+                <button
+                  onClick={loadUserAds}
+                  disabled={loadingUserAds}
+                  className="text-xs flex items-center gap-1 text-ink-3 hover:text-ink transition"
+                >
+                  <RefreshCw size={12} className={loadingUserAds ? 'animate-spin' : ''} />
+                  Refresh Status
+                </button>
+              </div>
+
+              {loadingUserAds ? (
+                <div className="py-8 text-center text-xs text-ink-3">
+                  <Spinner size={18} className="mx-auto mb-2" />
+                  Loading your ad campaigns...
+                </div>
+              ) : userAds.length === 0 ? (
+                <div className="p-8 text-center rounded-xl border border-dashed border-line bg-surface-2/40 space-y-3">
+                  <Megaphone size={28} className="mx-auto text-ink-4 opacity-50" />
+                  <div>
+                    <div className="text-xs font-semibold text-ink">No active or submitted ads</div>
+                    <div className="text-[11.5px] text-ink-3 mt-0.5">
+                      You haven't submitted any ad campaigns yet. Click below to place your first ad!
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowAdModal(true)}
+                    className="btn btn-soft btn-sm inline-flex items-center gap-1.5 text-xs"
+                  >
+                    <PlusCircle size={13} />
+                    Submit Ad Now
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {userAds.map((ad) => (
+                    <div
+                      key={ad.id}
+                      className="p-4 rounded-xl border border-line bg-surface-2/70 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-bold text-ink">{ad.title}</div>
+                          <a
+                            href={ad.linkUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline mt-0.5"
+                          >
+                            <span className="truncate max-w-[260px]">{ad.linkUrl}</span>
+                            <ExternalLink size={10} />
+                          </a>
+                        </div>
+                        <div>
+                          {ad.status === 'active' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Active Live
+                            </span>
+                          ) : ad.status === 'approved' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                              Approved
+                            </span>
+                          ) : ad.status === 'rejected' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                              Declined
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              Pending Review
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {ad.description && (
+                        <p className="text-xs text-ink-2 bg-surface-3/50 p-2.5 rounded-lg leading-relaxed">
+                          {ad.description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3 pt-1 border-t border-line/60">
+                        <span>Duration: {ad.durationDays} Days</span>
+                        <span>Contact: {ad.contactInfo}</span>
+                        <span>Submitted: {new Date(ad.createdAt).toLocaleDateString()}</span>
+                      </div>
+
+                      {ad.adminNote && (
+                        <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs">
+                          <span className="font-semibold text-accent">Admin Response: </span>
+                          <span className="text-ink-2">{ad.adminNote}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </SectionCard>
+        )}
       </main>
+
+      <UserAdModal isOpen={showAdModal} onClose={() => { setShowAdModal(false); loadUserAds(); }} />
     </div>
   );
 };

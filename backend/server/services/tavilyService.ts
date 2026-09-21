@@ -65,10 +65,6 @@ export async function searchTavilyWeb(
     };
 
     let answer = typeof data.answer === 'string' ? data.answer.trim() : '';
-    // Scrub vendor mentions for white-label compliance
-    answer = answer
-      .replace(/\b(?:tavily|tavily\.com)\b/gi, 'Live Web Search')
-      .replace(/\b(?:perplexity\s*ai|perplexity\.ai|perplexity)\b/gi, 'Live Web Search');
 
     const rawResults = Array.isArray(data.results) ? data.results : [];
     const items: WebSearchResultItem[] = [];
@@ -92,6 +88,7 @@ export async function searchTavilyWeb(
     }
 
     return {
+      query,
       answer,
       results: items,
       citations: Array.from(new Set(citations)),
@@ -105,62 +102,85 @@ export async function searchTavilyWeb(
 }
 
 /**
- * Unified web search dispatcher based on user plan:
- * - Free users: uses Tavily API exclusively.
- * - Paid (Premium) users: uses BOTH Perplexity AI and Tavily concurrently,
- *   merging their intelligence, verified links, and citations for maximum coverage and reliability.
+ * Unified web search dispatcher:
+ * Concurrently queries BOTH Tavily Web Search and Perplexity AI.
+ * Merges discovered websites and compiles distinct sections so the AI model can
+ * explicitly inform the user what was discovered in Tavily and what was found in Perplexity AI.
  */
 export async function searchUnifiedWeb(
   query: string,
   userPlan: 'free' | 'premium' = 'free',
   options: TavilySearchOptions = {},
 ): Promise<WebSearchResponse | null> {
-  if (userPlan === 'premium') {
-    // Paid users get Perplexity AI AND Tavily together
-    const [perplexityResult, tavilyResult] = await Promise.allSettled([
-      searchPerplexityWeb(query, options),
-      searchTavilyWeb(query, options),
-    ]);
+  const [perplexityResult, tavilyResult] = await Promise.allSettled([
+    searchPerplexityWeb(query, options),
+    searchTavilyWeb(query, options),
+  ]);
 
-    const perp = perplexityResult.status === 'fulfilled' ? perplexityResult.value : null;
-    const tav = tavilyResult.status === 'fulfilled' ? tavilyResult.value : null;
+  const perp = perplexityResult.status === 'fulfilled' ? perplexityResult.value : null;
+  const tav = tavilyResult.status === 'fulfilled' ? tavilyResult.value : null;
 
-    if (perp && tav) {
-      // Merge results and deduplicate URLs
-      const seenUrls = new Set<string>();
-      const combinedResults: WebSearchResultItem[] = [];
+  if (perp && tav) {
+    const seenUrls = new Set<string>();
+    const combinedResults: WebSearchResultItem[] = [];
 
-      for (const item of [...perp.results, ...tav.results]) {
-        if (!seenUrls.has(item.url)) {
-          seenUrls.add(item.url);
-          combinedResults.push(item);
-        }
+    for (const item of [...tav.results, ...perp.results]) {
+      if (!seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
+        combinedResults.push(item);
       }
-
-      const combinedCitations = Array.from(
-        new Set([...(perp.citations || []), ...(tav.citations || [])]),
-      );
-
-      let blendedAnswer = perp.answer;
-      if (tav.answer && !perp.answer.includes(tav.answer.slice(0, 50))) {
-        blendedAnswer += `\n\n${tav.answer}`;
-      }
-
-      return {
-        answer: blendedAnswer,
-        results: combinedResults,
-        citations: combinedCitations,
-        modelUsed: 'dual-search-engine (perplexity + tavily)',
-      };
     }
 
-    if (perp) return perp;
-    if (tav) return tav;
-    return null;
+    const combinedCitations = Array.from(
+      new Set([...(tav.citations || []), ...(perp.citations || [])]),
+    );
+
+    const answerParts: string[] = [];
+
+    if (tav.answer || tav.results.length) {
+      let tavSec = `### 🔍 Tavily Search Findings:\n`;
+      if (tav.results.length) {
+        tavSec += `Discovered Websites & Direct Links:\n` +
+          tav.results.map((r, i) => `${i + 1}. [${r.title}](${r.url}) — ${r.url}`).join('\n') + '\n\n';
+      }
+      if (tav.answer) {
+        tavSec += `Key Findings: ${tav.answer}`;
+      }
+      answerParts.push(tavSec.trim());
+    }
+
+    if (perp.answer) {
+      let perpSec = `### 🧠 Perplexity AI Real-Time Research:\n${perp.answer}`;
+      if (perp.citations?.length) {
+        perpSec += `\n\nReferenced Citations:\n` + perp.citations.map((c, i) => `[${i + 1}] ${c}`).join('\n');
+      }
+      answerParts.push(perpSec.trim());
+    }
+
+    return {
+      query,
+      answer: answerParts.join('\n\n'),
+      results: combinedResults,
+      citations: combinedCitations,
+      modelUsed: 'dual-search-engine (tavily + perplexity)',
+    };
   }
 
-  // Free users use Tavily API exclusively
-  return searchTavilyWeb(query, options);
+  if (tav) {
+    return {
+      ...tav,
+      answer: `### 🔍 Tavily Search Findings:\n${tav.answer || ''}`,
+    };
+  }
+
+  if (perp) {
+    return {
+      ...perp,
+      answer: `### 🧠 Perplexity AI Real-Time Research:\n${perp.answer || ''}`,
+    };
+  }
+
+  return null;
 }
 
 /**

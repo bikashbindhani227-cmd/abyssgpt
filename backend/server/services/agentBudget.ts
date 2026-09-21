@@ -61,7 +61,8 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
 const RESEARCH_RE = /\b(compare|comparison|versus|\bvs\.?\b|pros and cons|research|analyze|analyse|evaluate|market analysis|literature|state of the art|survey|benchmarks?)\b/i;
 const DEPTH_RE = /\b(in[- ]depth|deep dive|comprehensive|thorough|detailed|extensive|exhaustive|complete report|full report)\b/i;
 const MULTIPART_RE = /(\?\s*\S+\?|\b(?:and also|additionally|as well as|furthermore|moreover|first.{0,40}(?:then|second|next))\b)/i;
-const CODING_RE = /\b(debug|stack ?trace|traceback|exception|error message|fix (?:this|my|the) (?:code|bug|error|function|script)|run (?:this|my|the) (?:code|script|program)|execute|compile|unit ?test|code review|refactor|optimi[sz]e (?:this|my|the) (?:code|query|function)|syntax error|typeerror|referenceerror|nullpointer|segfault|why (?:is|does) my (?:code|script|program))\b/i;
+const CODING_RE = /\b(debug|stack ?trace|traceback|exception|error message|fix (?:this|my|the) (?:code|bug|error|function|script)|run (?:this|my|the) (?:code|script|program)|execute|compile|unit ?test|code review|refactor|optimi[sz]e (?:this|my|the) (?:code|query|function)|syntax error|typeerror|referenceerror|nullpointer|segfault|why (?:is|does) my (?:code|script|program)|code bana|code do|code generate|code likh|code de|coding|write (?:a |the )?(?:code|script|program|function)|implement (?:a |the )?(?:function|algorithm|class|api)|python|javascript|typescript|c\+\+|golang|java|rust|html|css|php|sql query|regex|backend code|frontend code|react component)\b/i;
+const PROMPT_GENERATION_RE = /\b(prompt|prompts|promt|promts|system prompt|image prompt|prompt (?:bana|generate|likh|create|give|chahiye)|generate (?:a |me a )?prompt)\b/i;
 const PROJECT_GENERATION_RE = /(?:\b(?:build|create|generate|develop|make|implement|code|write|design)\b[\s\S]{0,160}\b(?:complete|entire|full[- ]stack|production[- ]ready|whole|all required|source code|project|application|app|website|files|bot|dashboard|service|api|cli|tool|saas|backend|frontend)\b|\bfull[- ]stack\b|\bentire project\b|\ball required files\b|\bcomplete source code\b|\bgenerate the (?:entire|complete|whole) (?:project|application|app|website|source code)\b|\bproduction[- ]ready (?:full[- ]stack|application|app|website|project)\b)/i;
 const SOFTWARE_ENGINEERING_RE = /\b(telegram bot|discord bot|\bbot\b|rest api|graphql api|\bapi\b|backend service|\bbackend\b|admin dashboard|\bdashboard\b|saas|\bcli\b|automation tool|full[- ]stack|web application|crud|sqlite|postgres|fastapi|express|flask|django|react|vite|next\.?js|dockerfile)\b/i;
 const CODE_FENCE_RE = /```[\s\S]+```/;
@@ -86,6 +87,7 @@ export function classifyRequest(message: string, explicitWebSearch = false): Tas
   }
   if (hasFence) { needsCodeExecution = true; signals.push('code_block_present'); complexity += 1; }
   if (MATH_RE.test(text) && text.length < 400) { signals.push('computation'); needsCodeExecution = true; complexity += 1; }
+  if (PROMPT_GENERATION_RE.test(text)) { signals.push('prompt_generation'); complexity = Math.max(complexity, 3); }
   
   const isSearchIntent = SEARCH_INTENT_RE.test(text);
   const isCurrentInfo = CURRENT_INFO_RE.test(text);
@@ -106,7 +108,7 @@ export function classifyRequest(message: string, explicitWebSearch = false): Tas
   if (TRIVIAL_RE.test(text)) { signals.push('greeting_or_trivial'); complexity = 1; needsWebSearch = false; needsCodeExecution = false; }
   complexity = Math.max(1, Math.min(10, complexity));
   let category: TaskCategory;
-  if (needsCodeExecution && (isProjectGeneration || CODING_RE.test(text) || hasFence)) category = 'coding';
+  if (isProjectGeneration || CODING_RE.test(text) || (needsCodeExecution && hasFence)) category = 'coding';
   else if (complexity <= 3 && !hasFence && !needsCodeExecution && !urls.length && !needsWebSearch) category = 'simple';
   else if (researchHits >= 2 || complexity >= 6) category = 'research';
   else if (needsWebSearch || complexity >= 4) category = 'current_info';

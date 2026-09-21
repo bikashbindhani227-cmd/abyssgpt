@@ -124,6 +124,27 @@ export interface TierLimitsConfig {
   };
 }
 
+export type AdSubmissionStatus = 'pending' | 'approved' | 'active' | 'rejected' | 'completed';
+
+export interface UserAdSubmission {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  title: string;
+  description: string;
+  linkUrl: string;
+  bannerUrl?: string;
+  contactInfo: string;
+  durationDays: number;
+  budgetInr?: number;
+  notes?: string;
+  status: AdSubmissionStatus;
+  adminNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppConfig {
   appName: string;
   maintenanceMode: boolean;
@@ -132,3 +153,4 @@ export interface AppConfig {
   telegramContactUsername: string;
   updatedAt?: string;
 }
+

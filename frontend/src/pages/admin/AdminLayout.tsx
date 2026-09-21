@@ -1,21 +1,23 @@
 import React, { useState } from 'react';
-import { Users, Terminal, Gauge, Settings as SettingsIcon, Shield, ArrowLeft, Menu, X, LayoutDashboard } from 'lucide-react';
+import { Users, Terminal, Gauge, Settings as SettingsIcon, Shield, ArrowLeft, Menu, X, LayoutDashboard, Megaphone } from 'lucide-react';
 import { AdminUsers } from './AdminUsers.js';
 import { AdminSystemPrompt } from './AdminSystemPrompt.js';
 import { AdminLimits } from './AdminLimits.js';
 import { AdminSettings } from './AdminSettings.js';
 import { AdminDashboard } from './AdminDashboard.js';
+import { AdminAds } from './AdminAds.js';
 
 interface AdminLayoutProps {
   onBackToChat: () => void;
 }
-type AdminSection = 'dashboard' | 'users' | 'system-prompt' | 'limits' | 'settings';
+type AdminSection = 'dashboard' | 'users' | 'system-prompt' | 'limits' | 'settings' | 'ads';
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToChat }) => {
   const [currentSection, setCurrentSection] = useState<AdminSection>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navItems = [
     { id: 'dashboard' as const, label: 'Overview', icon: LayoutDashboard },
+    { id: 'ads' as const, label: 'Ad Requests', icon: Megaphone },
     { id: 'system-prompt' as const, label: 'System Prompt', icon: Terminal },
     { id: 'limits' as const, label: 'Limits & Quotas', icon: Gauge },
     { id: 'users' as const, label: 'Users', icon: Users },
@@ -104,6 +106,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToChat }) => {
         <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-7" style={{ maxHeight: 'calc(100dvh - 56px)' }}>
           <div className="mx-auto max-w-6xl">
             {currentSection === 'dashboard' && <AdminDashboard onNavigateUsers={() => go('users')} />}
+            {currentSection === 'ads' && <AdminAds />}
             {currentSection === 'system-prompt' && <AdminSystemPrompt />}
             {currentSection === 'limits' && <AdminLimits />}
             {currentSection === 'users' && <AdminUsers />}

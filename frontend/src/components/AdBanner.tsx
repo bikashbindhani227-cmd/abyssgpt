@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Sparkles, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Sparkles, ExternalLink, ShieldCheck, Megaphone } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.js';
 import { apiRequest } from '../lib/api.js';
 import type { AppSettingsConfig } from '../types.js';
+import { UserAdModal } from './UserAdModal.js';
 
 interface AdBannerProps {
   slot: 'sidebar' | 'chat-empty';
   onOpenPremium?: () => void;
+  onOpenAdvertise?: () => void;
 }
 
 let cachedSettings: AppSettingsConfig | null = null;
@@ -46,11 +48,20 @@ declare global {
   }
 }
 
-export const AdBanner: React.FC<AdBannerProps> = ({ slot, onOpenPremium }) => {
+export const AdBanner: React.FC<AdBannerProps> = ({ slot, onOpenPremium, onOpenAdvertise }) => {
   const { userProfile } = useAuth();
   const [settings, setSettings] = useState<AppSettingsConfig | null>(cachedSettings);
+  const [showAdModal, setShowAdModal] = useState(false);
   const adsenseRef = useRef<HTMLModElement>(null);
   const customScriptRef = useRef<HTMLDivElement>(null);
+
+  const handleOpenAdvertise = () => {
+    if (onOpenAdvertise) {
+      onOpenAdvertise();
+    } else {
+      setShowAdModal(true);
+    }
+  };
 
   const isPremium = userProfile?.plan === 'premium' || Boolean(userProfile?.isAdmin);
   // Premium members can toggle off all advertisements on the platform (defaults to true for Pro)
@@ -144,17 +155,30 @@ export const AdBanner: React.FC<AdBannerProps> = ({ slot, onOpenPremium }) => {
   // 2. Custom Script slot (Monetag / Adsterra / etc.)
   if (provider === 'custom' && customScript) {
     return (
-      <div className={`ad-container ad-slot-${slot}`} role="complementary" aria-label="Advertisement">
-        <div className="ad-header">
-          <span className="ad-badge">Sponsored</span>
-          {onOpenPremium && (
-            <button type="button" className="ad-hide-btn" onClick={onOpenPremium}>
-              Hide ads with Pro
-            </button>
-          )}
+      <>
+        <div className={`ad-container ad-slot-${slot}`} role="complementary" aria-label="Advertisement">
+          <div className="ad-header">
+            <span className="ad-badge">Sponsored</span>
+            <div className="ad-actions">
+              <button
+                type="button"
+                className="ad-promote-btn"
+                onClick={handleOpenAdvertise}
+                title="Place your ad on AbyssGPT"
+              >
+                Advertise
+              </button>
+              {onOpenPremium && (
+                <button type="button" className="ad-hide-btn" onClick={onOpenPremium}>
+                  Hide ads
+                </button>
+              )}
+            </div>
+          </div>
+          <div ref={customScriptRef} className="ad-custom-script" />
         </div>
-        <div ref={customScriptRef} className="ad-custom-script" />
-      </div>
+        <UserAdModal isOpen={showAdModal} onClose={() => setShowAdModal(false)} />
+      </>
     );
   }
 
@@ -165,47 +189,60 @@ export const AdBanner: React.FC<AdBannerProps> = ({ slot, onOpenPremium }) => {
   const bannerImg = settings?.sponsorBannerUrl?.trim() || '';
 
   return (
-    <div className={`ad-container ad-slot-${slot}`} role="complementary" aria-label="Sponsored Partner">
-      <div className="ad-header">
-        <span className="ad-badge">Sponsor / Ad</span>
-        {onOpenPremium && (
-          <button type="button" className="ad-hide-btn" onClick={onOpenPremium}>
-            Remove Ads
-          </button>
-        )}
-      </div>
+    <>
+      <div className={`ad-container ad-slot-${slot}`} role="complementary" aria-label="Sponsored Partner">
+        <div className="ad-header">
+          <span className="ad-badge">Sponsor / Ad</span>
+          <div className="ad-actions">
+            <button
+              type="button"
+              className="ad-promote-btn"
+              onClick={handleOpenAdvertise}
+              title="Advertise your product or service here"
+            >
+              Advertise
+            </button>
+            {onOpenPremium && (
+              <button type="button" className="ad-hide-btn" onClick={onOpenPremium}>
+                Remove Ads
+              </button>
+            )}
+          </div>
+        </div>
 
-      <a
-        href={linkUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="ad-card-link"
-        onClick={(e) => {
-          if (linkUrl.startsWith('#') || linkUrl.includes('pro') || linkUrl.includes('upgrade')) {
-            if (onOpenPremium) {
-              e.preventDefault();
-              onOpenPremium();
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ad-card-link"
+          onClick={(e) => {
+            if (linkUrl.startsWith('#') || linkUrl.includes('pro') || linkUrl.includes('upgrade')) {
+              if (onOpenPremium) {
+                e.preventDefault();
+                onOpenPremium();
+              }
             }
-          }
-        }}
-      >
-        {bannerImg ? (
-          <div className="ad-banner-img-wrap">
-            <img src={bannerImg} alt={title} className="ad-banner-img" />
-          </div>
-        ) : (
-          <div className="ad-banner-placeholder">
-            <div className="ad-icon-box">
-              <Sparkles size={16} className="ad-icon" />
+          }}
+        >
+          {bannerImg ? (
+            <div className="ad-banner-img-wrap">
+              <img src={bannerImg} alt={title} className="ad-banner-img" />
             </div>
-            <div className="ad-text-box">
-              <strong className="ad-title">{title}</strong>
-              <span className="ad-desc">{text}</span>
+          ) : (
+            <div className="ad-banner-placeholder">
+              <div className="ad-icon-box">
+                <Sparkles size={16} className="ad-icon" />
+              </div>
+              <div className="ad-text-box">
+                <strong className="ad-title">{title}</strong>
+                <span className="ad-desc">{text}</span>
+              </div>
+              <ExternalLink size={14} className="ad-arrow" />
             </div>
-            <ExternalLink size={14} className="ad-arrow" />
-          </div>
-        )}
-      </a>
-    </div>
+          )}
+        </a>
+      </div>
+      <UserAdModal isOpen={showAdModal} onClose={() => setShowAdModal(false)} />
+    </>
   );
 };

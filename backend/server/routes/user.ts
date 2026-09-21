@@ -7,7 +7,7 @@ import { persistentStorage } from '../services/storage.js';
 import { adminDb } from '../config/firebaseAdmin.js';
 import { sendActiveNotificationEmail } from '../services/emailService.js';
 import { listConversations, createConversation, addMessage } from '../services/conversationService.js';
-import type { UserProfile } from '../../types.js';
+import type { UserProfile, UserAdSubmission } from '../../types.js';
 
 const hasServiceAccount = Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL);
 
@@ -154,4 +154,79 @@ userRouter.post(
     }
   }
 );
+
+// Get current user's submitted ads
+userRouter.get(
+  '/ads',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const ads = persistentStorage.getAdSubmissions(req.user!.uid);
+      res.json({ ads });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch ad submissions';
+      res.status(500).json({ error: errorMsg });
+    }
+  }
+);
+
+// Submit a new ad request
+userRouter.post(
+  '/ads',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const { title, description, linkUrl, bannerUrl, contactInfo, durationDays, budgetInr, notes } = req.body;
+
+      if (!title || typeof title !== 'string' || !title.trim()) {
+        res.status(400).json({ error: 'Ad headline/title is required.' });
+        return;
+      }
+      if (!linkUrl || typeof linkUrl !== 'string' || !linkUrl.trim()) {
+        res.status(400).json({ error: 'Destination URL (link) is required.' });
+        return;
+      }
+      if (!contactInfo || typeof contactInfo !== 'string' || !contactInfo.trim()) {
+        res.status(400).json({ error: 'Contact info (Telegram handle, WhatsApp, or email) is required so we can reach you.' });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const newAd: UserAdSubmission = {
+        id: `ad_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        userId: user.uid,
+        userEmail: user.email || '',
+        userDisplayName: user.displayName || 'Anonymous User',
+        title: title.trim().slice(0, 80),
+        description: (description || '').toString().trim().slice(0, 300),
+        linkUrl: linkUrl.trim().slice(0, 500),
+        bannerUrl: bannerUrl ? bannerUrl.toString().trim().slice(0, 500) : undefined,
+        contactInfo: contactInfo.trim().slice(0, 100),
+        durationDays: Number(durationDays) || 7,
+        budgetInr: budgetInr ? Number(budgetInr) : undefined,
+        notes: notes ? notes.toString().trim().slice(0, 500) : undefined,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      persistentStorage.saveAdSubmission(newAd);
+
+      if (hasServiceAccount) {
+        adminDb.collection('adSubmissions').doc(newAd.id).set(newAd).catch(() => {});
+      }
+
+      res.status(201).json({
+        success: true,
+        ad: newAd,
+        message: 'Your ad request has been submitted successfully! We will review and activate it shortly.',
+      });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to submit ad request';
+      res.status(500).json({ error: errorMsg });
+    }
+  }
+);
+
 

@@ -147,20 +147,22 @@ export const Spinner: React.FC<{ size?: number; className?: string }> = ({ size 
 
 /** Compact labelled section used by Settings and Admin pages. */
 export const SectionCard: React.FC<{
-  title: React.ReactNode;
+  title?: React.ReactNode;
   description?: React.ReactNode;
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }> = ({ title, description, action, children, className = '' }) => (
   <section className={`card card-pad space-y-4 ${className}`}>
-    <div className="flex items-start justify-between gap-3 border-b border-line pb-3.5">
-      <div className="min-w-0">
-        <h3 className="text-[14px] font-bold text-ink">{title}</h3>
-        {description && <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{description}</p>}
+    {(title || description || action) && (
+      <div className="flex items-start justify-between gap-3 border-b border-line pb-3.5">
+        <div className="min-w-0">
+          {title && <h3 className="text-[14px] font-bold text-ink">{title}</h3>}
+          {description && <p className="mt-0.5 text-xs leading-relaxed text-ink-3">{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
+    )}
     {children}
   </section>
 );

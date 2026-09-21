@@ -3,6 +3,8 @@ import {
   auth,
   googleProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   firebaseSignOut,
@@ -98,6 +100,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    // Process redirect result on mount (e.g. from mobile Google sign-in)
+    getRedirectResult(auth)
+      .then(async (cred) => {
+        if (cred?.user) {
+          await fetchProfile(cred.user);
+        }
+      })
+      .catch((err) => {
+        console.warn('Google redirect result error:', err);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {
@@ -132,8 +145,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = async () => {
-    const cred = await signInWithPopup(auth, googleProvider);
-    await fetchProfile(cred.user);
+    // Ensure current host/domain is registered with Firebase Auth
+    try {
+      const hostname = window.location.hostname;
+      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        await apiRequest('/api/auth/authorize-domain', {
+          method: 'POST',
+          body: JSON.stringify({ domain: hostname }),
+        }).catch(() => {});
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      await fetchProfile(cred.user);
+    } catch (popupErr: unknown) {
+      const errObj = popupErr as { code?: string };
+      const code = errObj?.code || '';
+
+      // If popup was blocked or mobile, and NOT embedded in an iframe, use redirect
+      if (!isInIframe && (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || isMobile)) {
+        console.log('Mobile/popup blocked outside iframe. Switching to signInWithRedirect...');
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
+      // Re-trigger domain registration if domain was rejected
+      if (code === 'auth/unauthorized-domain') {
+        try {
+          await apiRequest('/api/auth/authorize-domain', {
+            method: 'POST',
+            body: JSON.stringify({ domain: window.location.hostname }),
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      throw popupErr;
+    }
   };
 
   const logout = async () => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.js';
-import { Mail, Lock, User, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, ArrowRight, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import { AbyssLogo } from '../components/AbyssLogo.js';
 import { Spinner } from '../components/ui.js';
 import { formatAuthError } from '../lib/authErrors.js';
@@ -18,6 +18,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,9 +96,22 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
         </div>
 
         {error && (
-          <div className="alert alert-error mb-5" role="alert">
-            <AlertCircle className="h-4 w-4" />
-            <span>{error}</span>
+          <div className="alert alert-error mb-5 flex flex-col gap-2 text-left" role="alert">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-danger" />
+              <span className="text-xs leading-relaxed">{error}</span>
+            </div>
+            {isInIframe && (
+              <a
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary btn-xs self-start inline-flex items-center gap-1.5 mt-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                <span>Open in Full Tab</span>
+              </a>
+            )}
           </div>
         )}
 
@@ -106,7 +120,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
           type="button"
           onClick={handleGoogleSignIn}
           disabled={loading}
-          className="btn btn-soft btn-block mb-4"
+          className="btn btn-soft btn-block mb-3"
         >
           <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -116,6 +130,20 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
           </svg>
           <span>Continue with Google</span>
         </button>
+
+        {isInIframe && (
+          <div className="mb-3 text-center">
+            <a
+              href={window.location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-ink-3 hover:text-brand transition-colors"
+            >
+              <ExternalLink className="h-3 w-3" />
+              <span>Using preview on mobile? Open in full tab</span>
+            </a>
+          </div>
+        )}
 
         <div className="relative my-5" aria-hidden="true">
           <div className="absolute inset-0 flex items-center">

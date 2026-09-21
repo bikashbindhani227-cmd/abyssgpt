@@ -6,8 +6,15 @@ const CONFIG_CACHE_TTL_MS=3000;
 let systemCache:{value:SystemPromptConfig;expires:number}|null=null;
 let limitsCache:{value:AppLimitsConfig;expires:number}|null=null;
 let settingsCache:{value:AppSettingsConfig;expires:number}|null=null;
-const DEFAULT_SYSTEM_PROMPT=process.env.DEFAULT_SYSTEM_PROMPT||'You are AbyssGPT, a capable, direct, analytical conversational AI assistant. Speak clearly and helpfully.';
-const DEFAULT_LIMITS:AppLimitsConfig={free:{dailyMessageLimit:3,rateLimitPerMinute:5,contextLimit:10},premium:{dailyMessageLimit:200,rateLimitPerMinute:30,contextLimit:30}};
+const DEFAULT_SYSTEM_PROMPT =
+  (process.env.SYSTEM_PROMPT || process.env.DEFAULT_SYSTEM_PROMPT || '').trim() ||
+  'You are AbyssGPT, a capable, direct, analytical conversational AI assistant. Speak clearly and helpfully.';
+
+export function getEffectiveSystemPromptFromEnv(): string {
+  return (process.env.SYSTEM_PROMPT || process.env.DEFAULT_SYSTEM_PROMPT || '').trim();
+}
+
+const DEFAULT_LIMITS: AppLimitsConfig = { free: { dailyMessageLimit: 3, rateLimitPerMinute: 5, contextLimit: 10 }, premium: { dailyMessageLimit: 200, rateLimitPerMinute: 30, contextLimit: 30 } };
 const DEFAULT_SETTINGS:AppSettingsConfig={
   appName:'AbyssGPT',
   welcomeMessage:'Welcome to AbyssGPT. Ask anything and get a direct, thoughtful response.',
@@ -36,7 +43,43 @@ const DEFAULT_SETTINGS:AppSettingsConfig={
   sponsorText:'Reach thousands of active AI users. Contact to sponsor or upgrade to Pro for zero ads.',
 };
 async function remote(doc:string){ if(!hasServiceAccount)return null; const s=await adminDb.collection('appConfig').doc(doc).get(); return s.exists?s.data():null; }
-export async function getSystemPromptConfig(){ const now=Date.now(); if(systemCache&&systemCache.expires>now)return systemCache.value; const remoteData=await remote('system'); if(remoteData?.systemPrompt){const v=remoteData as SystemPromptConfig; persistentStorage.saveSystemPromptConfig(v); systemCache={value:v,expires:now+CONFIG_CACHE_TTL_MS}; return v;} const local=persistentStorage.getSystemPromptConfig(); if(local?.systemPrompt){systemCache={value:local,expires:now+CONFIG_CACHE_TTL_MS}; return local;} const v={systemPrompt:DEFAULT_SYSTEM_PROMPT,previousPrompts:[],updatedAt:new Date().toISOString(),updatedBy:'system'}; persistentStorage.saveSystemPromptConfig(v); if(hasServiceAccount)await adminDb.collection('appConfig').doc('system').set(v,{merge:true}); systemCache={value:v,expires:now+CONFIG_CACHE_TTL_MS}; return v; }
+export async function getSystemPromptConfig(): Promise<SystemPromptConfig> {
+  const envPrompt = getEffectiveSystemPromptFromEnv();
+  // If user provided an explicit SYSTEM_PROMPT or custom DEFAULT_SYSTEM_PROMPT via Render secret variables, strictly follow it
+  if (process.env.SYSTEM_PROMPT || (envPrompt && envPrompt !== 'You are AbyssGPT, a capable, direct, analytical conversational AI assistant. Speak clearly and helpfully.' && envPrompt !== 'You are AbyssGPT, a helpful AI assistant.')) {
+    return {
+      systemPrompt: envPrompt,
+      previousPrompts: [],
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'render_secret_variable',
+    };
+  }
+
+  const now = Date.now();
+  if (systemCache && systemCache.expires > now) return systemCache.value;
+  const remoteData = await remote('system');
+  if (remoteData?.systemPrompt) {
+    const v = remoteData as SystemPromptConfig;
+    persistentStorage.saveSystemPromptConfig(v);
+    systemCache = { value: v, expires: now + CONFIG_CACHE_TTL_MS };
+    return v;
+  }
+  const local = persistentStorage.getSystemPromptConfig();
+  if (local?.systemPrompt) {
+    systemCache = { value: local, expires: now + CONFIG_CACHE_TTL_MS };
+    return local;
+  }
+  const v = {
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    previousPrompts: [],
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'system',
+  };
+  persistentStorage.saveSystemPromptConfig(v);
+  if (hasServiceAccount) await adminDb.collection('appConfig').doc('system').set(v, { merge: true });
+  systemCache = { value: v, expires: now + CONFIG_CACHE_TTL_MS };
+  return v;
+}
 export async function updateSystemPrompt(newPrompt:string,updatedBy:string){ if(!newPrompt.trim())throw new Error('System prompt cannot be empty.'); const current=await getSystemPromptConfig(); const v={systemPrompt:newPrompt.trim(),previousPrompts:[...(current.previousPrompts||[]),...(current.systemPrompt&&current.systemPrompt!==newPrompt?[{prompt:current.systemPrompt,updatedAt:current.updatedAt,updatedBy:current.updatedBy}]:[])].slice(-10),updatedAt:new Date().toISOString(),updatedBy}; persistentStorage.saveSystemPromptConfig(v); systemCache={value:v,expires:Date.now()+CONFIG_CACHE_TTL_MS}; if(hasServiceAccount)await adminDb.collection('appConfig').doc('system').set(v,{merge:true}); return v; }
 export async function getAppLimitsConfig(){ const now=Date.now(); if(limitsCache&&limitsCache.expires>now)return limitsCache.value; const remoteData=await remote('limits'); const source=(remoteData||persistentStorage.getAppLimitsConfig()||{}) as Partial<AppLimitsConfig>; const v={free:{...DEFAULT_LIMITS.free,...(source.free||{})},premium:{...DEFAULT_LIMITS.premium,...(source.premium||{})}} as AppLimitsConfig; persistentStorage.saveAppLimitsConfig(v); limitsCache={value:v,expires:now+CONFIG_CACHE_TTL_MS}; return v; }
 export async function updateAppLimitsConfig(newLimits:Partial<AppLimitsConfig>,updatedBy:string){ const c=await getAppLimitsConfig(); const v={free:{...c.free,...(newLimits.free||{})},premium:{...c.premium,...(newLimits.premium||{})},updatedAt:new Date().toISOString(),updatedBy}; persistentStorage.saveAppLimitsConfig(v); limitsCache={value:v,expires:Date.now()+CONFIG_CACHE_TTL_MS}; if(hasServiceAccount)await adminDb.collection('appConfig').doc('limits').set(v,{merge:true}); return v; }

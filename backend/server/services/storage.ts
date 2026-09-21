@@ -8,6 +8,7 @@ import type {
   SystemPromptConfig,
   AppLimitsConfig,
   AppSettingsConfig,
+  UserAdSubmission,
 } from '../../types.js';
 
 interface StorageData {
@@ -20,6 +21,7 @@ interface StorageData {
     limits?: AppLimitsConfig;
     settings?: AppSettingsConfig;
   };
+  adSubmissions?: Record<string, UserAdSubmission>;
 }
 
 function getDataDir(): string {
@@ -73,6 +75,7 @@ class PersistentStorage {
           messages: parsed.messages || {},
           memories: parsed.memories || {},
           configs: parsed.configs || {},
+          adSubmissions: parsed.adSubmissions || {},
         };
       } else {
         this.saveSync();
@@ -282,6 +285,50 @@ class PersistentStorage {
     this.data.configs.settings = { ...config };
     this.scheduleSave();
     return { ...config };
+  }
+
+  // --- Ad Submissions ---
+  getAdSubmissions(userId?: string): UserAdSubmission[] {
+    const list = Object.values(this.data.adSubmissions || {});
+    const filtered = userId ? list.filter((a) => a.userId === userId) : list;
+    return filtered.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  getAdSubmission(id: string): UserAdSubmission | null {
+    if (!this.data.adSubmissions) return null;
+    const item = this.data.adSubmissions[id];
+    return item ? { ...item } : null;
+  }
+
+  saveAdSubmission(sub: UserAdSubmission): UserAdSubmission {
+    if (!this.data.adSubmissions) {
+      this.data.adSubmissions = {};
+    }
+    this.data.adSubmissions[sub.id] = { ...sub };
+    this.scheduleSave();
+    return { ...sub };
+  }
+
+  updateAdSubmission(id: string, updates: Partial<UserAdSubmission>): UserAdSubmission | null {
+    if (!this.data.adSubmissions || !this.data.adSubmissions[id]) return null;
+    const existing = this.data.adSubmissions[id];
+    const updated: UserAdSubmission = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    this.data.adSubmissions[id] = updated;
+    this.scheduleSave();
+    return { ...updated };
+  }
+
+  deleteAdSubmission(id: string): boolean {
+    if (!this.data.adSubmissions || !this.data.adSubmissions[id]) return false;
+    delete this.data.adSubmissions[id];
+    this.scheduleSave();
+    return true;
   }
 }
 

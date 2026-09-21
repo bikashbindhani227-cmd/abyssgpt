@@ -26,14 +26,14 @@ export function formatAuthError(error: unknown): string {
       return 'The password is too weak. Please use at least 6 characters with a combination of letters and numbers.';
 
     case 'auth/popup-blocked':
-      return 'Google sign-in popup was blocked by your browser. Please allow popups for this site or open the app in a full browser tab.';
+      return 'Google sign-in was blocked by your browser or iframe security. Please click "Open in Full Tab" or register/sign in using Email and Password below.';
 
     case 'auth/popup-closed-by-user':
     case 'auth/cancelled-popup-request':
-      return 'Google sign-in was cancelled before completion. Please try again.';
+      return 'Google sign-in was cancelled. Please try again or use Email & Password below.';
 
     case 'auth/unauthorized-domain':
-      return 'This preview domain is not authorized in Firebase OAuth settings. Please use email sign-in or access the app via the primary domain.';
+      return 'Domain authorization has just been submitted to Firebase! Please tap "Continue with Google" again in a few seconds, or sign in with Email & Password.';
 
     case 'auth/too-many-requests':
       return 'Too many unsuccessful attempts. Access to this account has been temporarily disabled. Please reset your password or try again later.';
